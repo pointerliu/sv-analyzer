@@ -1,0 +1,15 @@
+[package]
+name = "dac26_mcp"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "main"
+path = "src/bin/main.rs"
+
+[[test]]
+name = "smoke_cli"
+path = "tests/integration/smoke_cli.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
