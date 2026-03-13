@@ -39,6 +39,10 @@ path = "tests/integration/blockize_demo_design.rs"
 name = "read_demo_wave"
 path = "tests/integration/read_demo_wave.rs"
 
+[[test]]
+name = "read_trace_coverage"
+path = "tests/integration/read_trace_coverage.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
