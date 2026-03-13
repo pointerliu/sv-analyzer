@@ -15,7 +15,12 @@ path = "tests/integration/smoke_cli.rs"
 name = "types_json"
 path = "tests/integration/types_json.rs"
 
+[[test]]
+name = "trait_object_compile"
+path = "tests/integration/trait_object_compile.rs"
+
 [dependencies]
+anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 
