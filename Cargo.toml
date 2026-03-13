@@ -43,6 +43,10 @@ path = "tests/integration/read_demo_wave.rs"
 name = "read_trace_coverage"
 path = "tests/integration/read_trace_coverage.rs"
 
+[[test]]
+name = "static_slice_demo"
+path = "tests/integration/static_slice_demo.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
