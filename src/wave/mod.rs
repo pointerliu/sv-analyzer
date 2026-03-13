@@ -4,9 +4,12 @@ use anyhow::Result;
 
 use crate::types::{SignalId, Timestamp};
 
+pub use self::wellen::WellenReader;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignalValue {
     pub raw_bits: String,
+    pub pretty_hex: Option<String>,
 }
 
 pub trait WaveformReader {

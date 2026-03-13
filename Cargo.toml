@@ -35,11 +35,16 @@ path = "tests/integration/extract_assign_dataflow.rs"
 name = "blockize_demo_design"
 path = "tests/integration/blockize_demo_design.rs"
 
+[[test]]
+name = "read_demo_wave"
+path = "tests/integration/read_demo_wave.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 sv-parser = "0.13.4"
+wellen = "0.20.3"
 
 [dev-dependencies]
 serde_json = "1"
