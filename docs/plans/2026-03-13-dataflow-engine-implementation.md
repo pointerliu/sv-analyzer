@@ -367,6 +367,7 @@ Start with these statement forms:
 - `case` selector contributes to input signals
 
 Capture left-values as outputs and right-values plus conditions as inputs.
+Your should parse statements from AST gotten by sv-parser.
 
 **Step 4: Run test to verify it passes**
 
