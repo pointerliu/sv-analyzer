@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dac26_mcp::ast::{AstProvider, SvParserProvider};
-use dac26_mcp::block::{Blockizer, DataflowBlockizer};
+use dac26_mcp::block::{BlockType, Blockizer, DataflowBlockizer};
 
 #[test]
 fn extracts_statement_level_dataflow_from_assignments_and_conditions() {
@@ -44,6 +44,7 @@ fn collect_entries(
     blocks
         .blocks()
         .iter()
+        .filter(|block| matches!(block.block_type(), BlockType::Assign | BlockType::Always))
         .flat_map(|block| {
             block.dataflow().iter().map(|dataflow| {
                 let mut inputs = dataflow

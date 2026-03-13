@@ -31,6 +31,10 @@ path = "tests/integration/block_models.rs"
 name = "extract_assign_dataflow"
 path = "tests/integration/extract_assign_dataflow.rs"
 
+[[test]]
+name = "blockize_demo_design"
+path = "tests/integration/blockize_demo_design.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

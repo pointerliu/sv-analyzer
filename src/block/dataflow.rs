@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
 use sv_parser::{unwrap_locate, unwrap_node, RefNode};
@@ -18,7 +18,7 @@ impl Blockizer for DataflowBlockizer {
             collector.collect_file(file)?;
         }
 
-        BlockSet::new(collector.blocks)
+        BlockSet::new(merge_assign_blocks(collector.blocks)?)
     }
 }
 
@@ -36,9 +36,15 @@ impl BlockCollector {
             match event {
                 sv_parser::NodeEvent::Enter(RefNode::ModuleDeclarationAnsi(module)) => {
                     current_module = module_name_from_node(&file.syntax_tree, module.into());
+                    if let Some(module_scope) = current_module.as_deref() {
+                        self.push_ansi_port_blocks(file, module_scope, module)?;
+                    }
                 }
                 sv_parser::NodeEvent::Enter(RefNode::ModuleDeclarationNonansi(module)) => {
                     current_module = module_name_from_node(&file.syntax_tree, module.into());
+                    if let Some(module_scope) = current_module.as_deref() {
+                        self.push_nonansi_port_blocks(file, module_scope, module)?;
+                    }
                 }
                 sv_parser::NodeEvent::Leave(RefNode::ModuleDeclarationAnsi(_))
                 | sv_parser::NodeEvent::Leave(RefNode::ModuleDeclarationNonansi(_)) => {
@@ -110,6 +116,383 @@ impl BlockCollector {
         self.next_block_id += 1;
 
         Ok(())
+    }
+
+    fn push_ansi_port_blocks(
+        &mut self,
+        file: &ParsedFile,
+        module_scope: &str,
+        module: &sv_parser::ModuleDeclarationAnsi,
+    ) -> Result<()> {
+        let Some(port_declarations) = &module.nodes.0.nodes.6 else {
+            return Ok(());
+        };
+        let Some(port_list) = &port_declarations.nodes.0.nodes.1 else {
+            return Ok(());
+        };
+
+        for (_, port) in port_list.contents() {
+            if let Some((block_type, signal_name)) = ansi_port_block_data(&file.syntax_tree, port) {
+                self.push_port_block(file, module_scope, block_type, signal_name)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn push_nonansi_port_blocks(
+        &mut self,
+        file: &ParsedFile,
+        module_scope: &str,
+        module: &sv_parser::ModuleDeclarationNonansi,
+    ) -> Result<()> {
+        for item in &module.nodes.2 {
+            let sv_parser::ModuleItem::PortDeclaration(port_declaration) = item else {
+                continue;
+            };
+
+            if let Some(ports) = nonansi_port_block_data(&file.syntax_tree, &port_declaration.0) {
+                for (block_type, signal_name) in ports {
+                    self.push_port_block(file, module_scope, block_type, signal_name)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn push_port_block(
+        &mut self,
+        file: &ParsedFile,
+        module_scope: &str,
+        block_type: BlockType,
+        signal_name: String,
+    ) -> Result<()> {
+        let dataflow = match block_type {
+            BlockType::ModInput => vec![to_entry(signal_name, HashSet::new())],
+            BlockType::ModOutput => {
+                vec![to_entry(signal_name.clone(), HashSet::from([signal_name]))]
+            }
+            _ => return Ok(()),
+        };
+
+        self.blocks.push(Block::new(
+            BlockId(self.next_block_id),
+            block_type,
+            CircuitType::Combinational,
+            module_scope,
+            file.path.display().to_string(),
+            1,
+            1,
+            dataflow,
+            String::new(),
+        )?);
+        self.next_block_id += 1;
+
+        Ok(())
+    }
+}
+
+fn ansi_port_block_data(
+    syntax_tree: &sv_parser::SyntaxTree,
+    port: &sv_parser::AnsiPortDeclaration,
+) -> Option<(BlockType, String)> {
+    match port {
+        sv_parser::AnsiPortDeclaration::Net(port) => {
+            let direction = match port.nodes.0.as_ref()? {
+                sv_parser::NetPortHeaderOrInterfacePortHeader::NetPortHeader(header) => {
+                    header.nodes.0.as_ref()?
+                }
+                sv_parser::NetPortHeaderOrInterfacePortHeader::InterfacePortHeader(_) => {
+                    return None;
+                }
+            };
+
+            Some((
+                block_type_for_direction(direction)?,
+                identifier_text(syntax_tree, (&port.nodes.1).into()),
+            ))
+        }
+        sv_parser::AnsiPortDeclaration::Variable(port) => Some((
+            block_type_for_direction(port.nodes.0.as_ref()?.nodes.0.as_ref()?)?,
+            identifier_text(syntax_tree, (&port.nodes.1).into()),
+        )),
+        sv_parser::AnsiPortDeclaration::Paren(port) => Some((
+            block_type_for_direction(port.nodes.0.as_ref()?)?,
+            identifier_text(syntax_tree, (&port.nodes.2).into()),
+        )),
+    }
+}
+
+fn block_type_for_direction(direction: &sv_parser::PortDirection) -> Option<BlockType> {
+    match direction {
+        sv_parser::PortDirection::Input(_) => Some(BlockType::ModInput),
+        sv_parser::PortDirection::Output(_) => Some(BlockType::ModOutput),
+        _ => None,
+    }
+}
+
+fn nonansi_port_block_data(
+    syntax_tree: &sv_parser::SyntaxTree,
+    port_declaration: &sv_parser::PortDeclaration,
+) -> Option<Vec<(BlockType, String)>> {
+    match port_declaration {
+        sv_parser::PortDeclaration::Input(port) => {
+            nonansi_input_port_block_data(syntax_tree, &port.nodes.1)
+        }
+        sv_parser::PortDeclaration::Output(port) => {
+            nonansi_output_port_block_data(syntax_tree, &port.nodes.1)
+        }
+        _ => None,
+    }
+}
+
+fn nonansi_input_port_block_data(
+    syntax_tree: &sv_parser::SyntaxTree,
+    declaration: &sv_parser::InputDeclaration,
+) -> Option<Vec<(BlockType, String)>> {
+    match declaration {
+        sv_parser::InputDeclaration::Net(declaration) => Some(
+            declaration
+                .nodes
+                .2
+                .nodes
+                .0
+                .contents()
+                .into_iter()
+                .map(|(identifier, _)| {
+                    (
+                        BlockType::ModInput,
+                        identifier_text(syntax_tree, identifier.into()),
+                    )
+                })
+                .collect(),
+        ),
+        sv_parser::InputDeclaration::Variable(declaration) => Some(
+            declaration
+                .nodes
+                .2
+                .nodes
+                .0
+                .contents()
+                .into_iter()
+                .map(|(identifier, _)| {
+                    (
+                        BlockType::ModInput,
+                        identifier_text(syntax_tree, identifier.into()),
+                    )
+                })
+                .collect(),
+        ),
+    }
+}
+
+fn nonansi_output_port_block_data(
+    syntax_tree: &sv_parser::SyntaxTree,
+    declaration: &sv_parser::OutputDeclaration,
+) -> Option<Vec<(BlockType, String)>> {
+    match declaration {
+        sv_parser::OutputDeclaration::Net(declaration) => Some(
+            declaration
+                .nodes
+                .2
+                .nodes
+                .0
+                .contents()
+                .into_iter()
+                .map(|(identifier, _)| {
+                    (
+                        BlockType::ModOutput,
+                        identifier_text(syntax_tree, identifier.into()),
+                    )
+                })
+                .collect(),
+        ),
+        sv_parser::OutputDeclaration::Variable(declaration) => Some(
+            declaration
+                .nodes
+                .2
+                .nodes
+                .0
+                .contents()
+                .into_iter()
+                .map(|(identifier, _, _)| {
+                    (
+                        BlockType::ModOutput,
+                        identifier_text(syntax_tree, identifier.into()),
+                    )
+                })
+                .collect(),
+        ),
+    }
+}
+
+fn merge_assign_blocks(blocks: Vec<Block>) -> Result<Vec<Block>> {
+    let mut assign_blocks = Vec::new();
+    let mut other_blocks = Vec::new();
+
+    for block in blocks {
+        if matches!(block.block_type(), BlockType::Assign) {
+            assign_blocks.push(block);
+        } else {
+            other_blocks.push(block);
+        }
+    }
+
+    if assign_blocks.len() < 2 {
+        other_blocks.extend(assign_blocks);
+        return Ok(other_blocks);
+    }
+
+    let mut parents = (0..assign_blocks.len()).collect::<Vec<_>>();
+
+    for left in 0..assign_blocks.len() {
+        for right in (left + 1)..assign_blocks.len() {
+            if same_assign_merge_group(&assign_blocks[left], &assign_blocks[right])
+                && assign_blocks_connected(&assign_blocks[left], &assign_blocks[right])
+            {
+                union(&mut parents, left, right);
+            }
+        }
+    }
+
+    let mut groups: HashMap<usize, Vec<Block>> = HashMap::new();
+    for (index, block) in assign_blocks.into_iter().enumerate() {
+        let root = find(&mut parents, index);
+        groups.entry(root).or_default().push(block);
+    }
+
+    let mut merged_assigns = groups
+        .into_values()
+        .map(merge_assign_group)
+        .collect::<Result<Vec<_>>>()?;
+
+    other_blocks.append(&mut merged_assigns);
+    Ok(other_blocks)
+}
+
+fn same_assign_merge_group(left: &Block, right: &Block) -> bool {
+    left.module_scope() == right.module_scope()
+        && left.source_file() == right.source_file()
+        && left.circuit_type() == right.circuit_type()
+}
+
+fn assign_blocks_connected(left: &Block, right: &Block) -> bool {
+    !left.output_signals().is_disjoint(right.input_signals())
+        || !right.output_signals().is_disjoint(left.input_signals())
+}
+
+fn merge_assign_group(mut blocks: Vec<Block>) -> Result<Block> {
+    if blocks.len() == 1 {
+        return Ok(blocks.pop().unwrap());
+    }
+
+    blocks.sort_by_key(|block| block.id().0);
+
+    let first = &blocks[0];
+    let line_start = blocks.iter().map(Block::line_start).min().unwrap_or(1);
+    let line_end = blocks
+        .iter()
+        .map(Block::line_end)
+        .max()
+        .unwrap_or(line_start);
+    let raw_entries = blocks
+        .iter()
+        .flat_map(|block| block.dataflow().iter().cloned())
+        .collect::<Vec<_>>();
+    let internal_outputs = raw_entries
+        .iter()
+        .map(|entry| entry.output.clone())
+        .collect::<HashSet<_>>();
+    let entry_inputs = raw_entries
+        .iter()
+        .map(|entry| (entry.output.clone(), entry.inputs.clone()))
+        .collect::<HashMap<_, _>>();
+    let dataflow = raw_entries
+        .into_iter()
+        .map(|entry| DataflowEntry {
+            output: entry.output.clone(),
+            inputs: resolve_external_inputs(&entry.inputs, &internal_outputs, &entry_inputs),
+        })
+        .collect::<Vec<_>>();
+
+    Block::new(
+        first.id(),
+        BlockType::Assign,
+        first.circuit_type(),
+        first.module_scope(),
+        first.source_file(),
+        line_start,
+        line_end,
+        dataflow,
+        String::new(),
+    )
+}
+
+fn resolve_external_inputs(
+    inputs: &HashSet<crate::types::SignalId>,
+    internal_outputs: &HashSet<crate::types::SignalId>,
+    entry_inputs: &HashMap<crate::types::SignalId, HashSet<crate::types::SignalId>>,
+) -> HashSet<crate::types::SignalId> {
+    let mut resolved = HashSet::new();
+
+    for input in inputs {
+        expand_input(
+            input,
+            internal_outputs,
+            entry_inputs,
+            &mut HashSet::new(),
+            &mut resolved,
+        );
+    }
+
+    resolved
+}
+
+fn expand_input(
+    input: &crate::types::SignalId,
+    internal_outputs: &HashSet<crate::types::SignalId>,
+    entry_inputs: &HashMap<crate::types::SignalId, HashSet<crate::types::SignalId>>,
+    visiting: &mut HashSet<crate::types::SignalId>,
+    resolved: &mut HashSet<crate::types::SignalId>,
+) {
+    if !internal_outputs.contains(input) {
+        resolved.insert(input.clone());
+        return;
+    }
+
+    if !visiting.insert(input.clone()) {
+        return;
+    }
+
+    if let Some(upstream_inputs) = entry_inputs.get(input) {
+        for upstream_input in upstream_inputs {
+            expand_input(
+                upstream_input,
+                internal_outputs,
+                entry_inputs,
+                visiting,
+                resolved,
+            );
+        }
+    }
+
+    visiting.remove(input);
+}
+
+fn find(parents: &mut [usize], index: usize) -> usize {
+    if parents[index] != index {
+        let root = find(parents, parents[index]);
+        parents[index] = root;
+    }
+    parents[index]
+}
+
+fn union(parents: &mut [usize], left: usize, right: usize) {
+    let left_root = find(parents, left);
+    let right_root = find(parents, right);
+    if left_root != right_root {
+        parents[right_root] = left_root;
     }
 }
 
