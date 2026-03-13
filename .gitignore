@@ -1,0 +1,5 @@
+demo/
+sv-analysis
+sv-analysis/
+*.pdf
+.worktrees/
