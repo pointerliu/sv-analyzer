@@ -23,6 +23,10 @@ path = "tests/integration/trait_object_compile.rs"
 name = "parse_demo_sv"
 path = "tests/integration/parse_demo_sv.rs"
 
+[[test]]
+name = "block_models"
+path = "tests/integration/block_models.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
