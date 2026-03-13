@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::ast::ParsedFile;
 use crate::types::{BlockId, SignalId};
 
+pub use dataflow::DataflowBlockizer;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum BlockType {
     ModInput,

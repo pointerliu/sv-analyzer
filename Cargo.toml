@@ -27,6 +27,10 @@ path = "tests/integration/parse_demo_sv.rs"
 name = "block_models"
 path = "tests/integration/block_models.rs"
 
+[[test]]
+name = "extract_assign_dataflow"
+path = "tests/integration/extract_assign_dataflow.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
