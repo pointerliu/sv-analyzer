@@ -4,9 +4,13 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+pub use self::sv_parser::SvParserProvider;
+
+#[derive(Debug)]
 pub struct ParsedFile {
     pub path: PathBuf,
+    pub source_text: String,
+    pub syntax_tree: ::sv_parser::SyntaxTree,
 }
 
 pub trait AstProvider {

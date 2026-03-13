@@ -19,10 +19,15 @@ path = "tests/integration/types_json.rs"
 name = "trait_object_compile"
 path = "tests/integration/trait_object_compile.rs"
 
+[[test]]
+name = "parse_demo_sv"
+path = "tests/integration/parse_demo_sv.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
+sv-parser = "0.13.4"
 
 [dev-dependencies]
 serde_json = "1"
