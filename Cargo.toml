@@ -11,5 +11,13 @@ path = "src/bin/main.rs"
 name = "smoke_cli"
 path = "tests/integration/smoke_cli.rs"
 
+[[test]]
+name = "types_json"
+path = "tests/integration/types_json.rs"
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
