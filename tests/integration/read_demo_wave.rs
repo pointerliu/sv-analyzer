@@ -6,12 +6,27 @@ use dac26_mcp::types::{SignalId, Timestamp};
 use dac26_mcp::wave::{WaveformReader, WellenReader};
 
 fn demo_vcd_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let repo_root_candidate = manifest_dir.join("demo/trace_coverage_demo/logs/sim.vcd");
+    if repo_root_candidate.is_file() {
+        return repo_root_candidate;
+    }
+
+    manifest_dir
         .parent()
         .unwrap()
         .parent()
         .unwrap()
         .join("demo/trace_coverage_demo/logs/sim.vcd")
+}
+
+#[test]
+fn demo_vcd_path_points_to_existing_fixture() {
+    assert!(
+        demo_vcd_path().is_file(),
+        "expected demo VCD fixture at {}",
+        demo_vcd_path().display()
+    );
 }
 
 fn write_fixture_vcd() -> PathBuf {
