@@ -59,6 +59,14 @@ path = "tests/integration/slice_json.rs"
 name = "cli_blockize"
 path = "tests/integration/cli_blockize.rs"
 
+[[test]]
+name = "cli_coverage"
+path = "tests/integration/cli_coverage.rs"
+
+[[test]]
+name = "cli_wave"
+path = "tests/integration/cli_wave.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
