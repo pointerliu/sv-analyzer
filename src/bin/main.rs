@@ -5,9 +5,11 @@ use clap::{Args, Parser, Subcommand};
 use dac26_mcp::ast::{AstProvider, SvParserProvider};
 use dac26_mcp::block::{Blockizer, DataflowBlockizer};
 use dac26_mcp::coverage::{CoverageTracker, VcdCoverageTracker};
+use dac26_mcp::slicer::{BluesSlicer, SliceRequest, StaticSlicer};
 use dac26_mcp::types::{SignalId, Timestamp};
 use dac26_mcp::wave::{WaveformReader, WellenReader};
 use serde::Serialize;
+use std::sync::Arc;
 
 #[derive(Debug, Parser)]
 #[command(name = "dataflow-engine")]
@@ -21,7 +23,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Commands {
     Blockize(BlockizeArgs),
-    Slice,
+    Slice(SliceArgs),
     Coverage(CoverageArgs),
     Wave(WaveArgs),
 }
@@ -46,6 +48,22 @@ struct CoverageArgs {
     clock_signal: Option<String>,
     #[arg(long)]
     clk_step: Option<i64>,
+}
+
+#[derive(Debug, Args)]
+struct SliceArgs {
+    #[arg(long = "sv", required = true)]
+    sv_files: Vec<PathBuf>,
+    #[arg(long)]
+    signal: String,
+    #[arg(long)]
+    vcd: Option<PathBuf>,
+    #[arg(long)]
+    time: Option<i64>,
+    #[arg(long = "min-time")]
+    min_time: Option<i64>,
+    #[arg(long = "static", default_value_t = false)]
+    static_slice: bool,
 }
 
 #[derive(Debug, Args)]
@@ -86,7 +104,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Blockize(args) => run_blockize(args),
-        Commands::Slice => Ok(()),
+        Commands::Slice(args) => run_slice(args),
         Commands::Coverage(args) => run_coverage(args),
         Commands::Wave(args) => run_wave(args),
     }
@@ -120,6 +138,51 @@ fn run_coverage(args: CoverageArgs) -> Result<()> {
     };
 
     println!("{}", serde_json::to_string_pretty(&output)?);
+    Ok(())
+}
+
+fn run_slice(args: SliceArgs) -> Result<()> {
+    if args.static_slice {
+        let parsed_files = SvParserProvider.parse_files(&args.sv_files)?;
+        let block_set = DataflowBlockizer.blockize(&parsed_files)?;
+        let request = SliceRequest {
+            signal: SignalId(args.signal),
+            time: Timestamp(0),
+            min_time: Timestamp(0),
+        };
+
+        let stable_json = StaticSlicer::new(block_set)
+            .slice(&request)?
+            .stable_json_graph()?;
+        println!("{}", serde_json::to_string_pretty(&stable_json)?);
+        return Ok(());
+    }
+
+    let parsed_files = SvParserProvider.parse_files(&args.sv_files)?;
+    let block_set = DataflowBlockizer.blockize(&parsed_files)?;
+    let vcd = args
+        .vcd
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("--vcd is required unless --static is set"))?;
+    let time = args
+        .time
+        .ok_or_else(|| anyhow::anyhow!("--time is required unless --static is set"))?;
+    let min_time = args
+        .min_time
+        .ok_or_else(|| anyhow::anyhow!("--min-time is required unless --static is set"))?;
+    let _waveform_reader = WellenReader::open(vcd)?;
+    let coverage = Arc::new(VcdCoverageTracker::open(vcd)?);
+    let request = SliceRequest {
+        signal: SignalId(args.signal),
+        time: Timestamp(time),
+        min_time: Timestamp(min_time),
+    };
+
+    let stable_json = BluesSlicer::new(block_set, coverage)
+        .slice(&request)?
+        .stable_json_graph()?;
+
+    println!("{}", serde_json::to_string_pretty(&stable_json)?);
     Ok(())
 }
 

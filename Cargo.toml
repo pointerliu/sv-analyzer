@@ -67,6 +67,10 @@ path = "tests/integration/cli_coverage.rs"
 name = "cli_wave"
 path = "tests/integration/cli_wave.rs"
 
+[[test]]
+name = "cli_slice"
+path = "tests/integration/cli_slice.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
