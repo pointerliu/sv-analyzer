@@ -1,24 +1,25 @@
 use dac26_mcp::types::{
-    BlockEdgeJson, BlockId, BlockJson, BlockNode, SignalNode, Timestamp, TraceGraphJson,
+    BlockEdgeJson, BlockId, BlockJson, SignalNode, TimedSliceNode, Timestamp, TraceGraphJson,
 };
 use serde_json::json;
 
 #[test]
 fn block_node_and_graph_dtos_serialize_as_expected() {
-    let node = BlockNode {
-        block_id: BlockId(7),
-        time: Timestamp(19),
-    };
-
     let graph = TraceGraphJson {
-        nodes: vec![node.clone()],
+        nodes: vec![TimedSliceNode::Block {
+            block_id: BlockId(7),
+            time: Timestamp(19),
+        }],
         edges: vec![BlockEdgeJson {
-            from: node.clone(),
-            to: BlockNode {
-                block_id: BlockId(3),
+            from: TimedSliceNode::Block {
+                block_id: BlockId(7),
+                time: Timestamp(19),
+            },
+            to: TimedSliceNode::Literal {
+                signal: SignalNode::literal("8'h0"),
                 time: Timestamp(18),
             },
-            signal: Some(SignalNode::named("result")),
+            signal: None,
         }],
         blocks: vec![BlockJson {
             id: BlockId(7),
@@ -34,6 +35,7 @@ fn block_node_and_graph_dtos_serialize_as_expected() {
         json!({
             "nodes": [
                 {
+                    "kind": "block",
                     "block_id": 7,
                     "time": 19
                 }
@@ -41,20 +43,22 @@ fn block_node_and_graph_dtos_serialize_as_expected() {
             "edges": [
                 {
                     "from": {
+                        "kind": "block",
                         "block_id": 7,
                         "time": 19
                     },
                     "to": {
-                        "block_id": 3,
+                        "kind": "literal",
+                        "signal": {
+                            "kind": "literal",
+                            "name": "8'h0",
+                            "locate": {
+                                "offset": 0,
+                                "line": 0,
+                                "len": 4
+                            }
+                        },
                         "time": 18
-                    },
-                    "signal": {
-                        "name": "result",
-                        "locate": {
-                            "offset": 0,
-                            "line": 0,
-                            "len": 6
-                        }
                     }
                 }
             ],

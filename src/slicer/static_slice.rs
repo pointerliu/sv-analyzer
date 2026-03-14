@@ -33,13 +33,14 @@ impl StaticSlicer {
         let mut visited = HashSet::new();
         let mut queued = HashSet::new();
         let mut work = VecDeque::from([request.signal.clone()]);
-        let mut node_ids = HashSet::new();
+        let mut nodes = HashSet::new();
+        let mut block_ids = HashSet::new();
         let mut edge_keys = HashSet::new();
 
         queued.insert(request.signal.clone());
 
         while let Some(signal) = work.pop_front() {
-            if !visited.insert(signal.clone()) {
+            if signal.is_literal() || !visited.insert(signal.clone()) {
                 continue;
             }
 
@@ -48,52 +49,61 @@ impl StaticSlicer {
                     continue;
                 };
 
-                node_ids.insert(*driver_id);
+                let driver_node = StaticBlockNode::Block {
+                    block_id: *driver_id,
+                };
+                nodes.insert(driver_node.clone());
+                block_ids.insert(*driver_id);
 
                 for input in inputs_for_output(driver, &signal) {
+                    if input.is_literal() {
+                        let literal_node = StaticBlockNode::Literal {
+                            signal: input.clone(),
+                        };
+                        nodes.insert(literal_node.clone());
+                        edge_keys.insert((literal_node, driver_node.clone(), None));
+                        continue;
+                    }
+
                     for upstream_id in self.block_set.drivers_for(&input) {
                         if *upstream_id != *driver_id && self.blocks_by_id.contains_key(upstream_id)
                         {
-                            node_ids.insert(*upstream_id);
-                            edge_keys.insert((upstream_id.0, driver_id.0, input.clone()));
+                            let upstream_node = StaticBlockNode::Block {
+                                block_id: *upstream_id,
+                            };
+                            nodes.insert(upstream_node.clone());
+                            block_ids.insert(*upstream_id);
+                            edge_keys.insert((
+                                upstream_node,
+                                driver_node.clone(),
+                                Some(input.clone()),
+                            ));
                         }
                     }
 
-                    if !visited.contains(&input) && queued.insert(input.clone()) {
-                        work.push_back(input.clone());
+                    if queued.insert(input.clone()) {
+                        work.push_back(input);
                     }
                 }
             }
         }
 
-        let mut node_ids = node_ids.into_iter().collect::<Vec<_>>();
-        node_ids.sort_by_key(|block_id| block_id.0);
+        let mut nodes = nodes.into_iter().collect::<Vec<_>>();
+        nodes.sort_by(|left, right| format!("{:?}", left).cmp(&format!("{:?}", right)));
 
         let mut edge_keys = edge_keys.into_iter().collect::<Vec<_>>();
-        edge_keys.sort_by(|left, right| {
-            (left.0, left.1, left.2.as_str()).cmp(&(right.0, right.1, right.2.as_str()))
-        });
+        edge_keys.sort_by(|left, right| format!("{:?}", left).cmp(&format!("{:?}", right)));
+
+        let mut block_ids = block_ids.into_iter().collect::<Vec<_>>();
+        block_ids.sort_by_key(|block_id| block_id.0);
 
         Ok(StaticSliceGraph {
-            nodes: node_ids
-                .iter()
-                .map(|block_id| StaticBlockNode {
-                    block_id: *block_id,
-                })
-                .collect(),
+            nodes,
             edges: edge_keys
                 .into_iter()
-                .map(|(from, to, signal)| StaticBlockEdge {
-                    from: StaticBlockNode {
-                        block_id: BlockId(from),
-                    },
-                    to: StaticBlockNode {
-                        block_id: BlockId(to),
-                    },
-                    signal: Some(signal),
-                })
+                .map(|(from, to, signal)| StaticBlockEdge { from, to, signal })
                 .collect(),
-            blocks: node_ids
+            blocks: block_ids
                 .into_iter()
                 .filter_map(|block_id| self.blocks_by_id.get(&block_id))
                 .map(|block| StaticBlockJson {

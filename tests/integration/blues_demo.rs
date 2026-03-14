@@ -5,8 +5,8 @@ use anyhow::Result;
 
 use dac26_mcp::block::{Block, BlockSet, BlockType, CircuitType, DataflowEntry};
 use dac26_mcp::coverage::CoverageTracker;
-use dac26_mcp::slicer::{BluesSlicer, SliceRequest};
-use dac26_mcp::types::{BlockId, SignalNode, Timestamp};
+use dac26_mcp::slicer::{BluesSlicer, SliceRequest, TimedSliceNode};
+use dac26_mcp::types::{BlockId, SignalNode, SignalNodeKind, Timestamp};
 
 #[test]
 fn blues_backtracks_sequential_state_until_coverage_hit_and_respects_min_time() {
@@ -54,7 +54,10 @@ fn blues_backtracks_sequential_state_until_coverage_hit_and_respects_min_time() 
     assert_eq!(
         path.nodes
             .iter()
-            .map(|node| (node.block_id.0, node.time.0))
+            .filter_map(|node| match node {
+                TimedSliceNode::Block { block_id, time } => Some((block_id.0, time.0)),
+                TimedSliceNode::Literal { .. } => None,
+            })
             .collect::<Vec<_>>(),
         vec![(1, 1), (2, 2), (2, 3)]
     );
@@ -62,16 +65,25 @@ fn blues_backtracks_sequential_state_until_coverage_hit_and_respects_min_time() 
         path.edges
             .iter()
             .map(|edge| (
-                edge.from.block_id.0,
-                edge.from.time.0,
-                edge.to.block_id.0,
-                edge.to.time.0,
+                match &edge.from {
+                    TimedSliceNode::Block { block_id, time } => Some((block_id.0, time.0)),
+                    TimedSliceNode::Literal { .. } => None,
+                },
+                match &edge.to {
+                    TimedSliceNode::Block { block_id, time } => Some((block_id.0, time.0)),
+                    TimedSliceNode::Literal { .. } => None,
+                },
                 edge.signal.as_ref().map(|signal| signal.name.as_str()),
             ))
             .collect::<Vec<_>>(),
-        vec![(1, 1, 2, 2, Some("tmp")), (2, 2, 2, 3, Some("result"))]
+        vec![
+            (Some((1, 1)), Some((2, 2)), Some("tmp")),
+            (Some((2, 2)), Some((2, 3)), Some("result")),
+        ]
     );
-    assert!(path.nodes.iter().all(|node| node.time.0 >= 1));
+    assert!(path.nodes.iter().all(|node| match node {
+        TimedSliceNode::Block { time, .. } | TimedSliceNode::Literal { time, .. } => time.0 >= 1,
+    }));
 }
 
 #[test]
@@ -138,17 +150,103 @@ fn blues_keeps_dependencies_from_distinct_outputs_of_same_block() {
         })
         .unwrap();
 
-    assert!(path.nodes.iter().any(|node| node.block_id.0 == 1));
-    assert!(path.nodes.iter().any(|node| node.block_id.0 == 2));
+    assert!(path.nodes.iter().any(|node| matches!(
+        node,
+        TimedSliceNode::Block {
+            block_id: BlockId(1),
+            ..
+        }
+    )));
+    assert!(path.nodes.iter().any(|node| matches!(
+        node,
+        TimedSliceNode::Block {
+            block_id: BlockId(2),
+            ..
+        }
+    )));
     assert!(path.edges.iter().any(|edge| {
-        edge.from.block_id.0 == 1
-            && edge.to.block_id.0 == 3
-            && edge.signal.as_ref().map(|signal| signal.name.as_str()) == Some("left_src")
+        matches!(
+            edge.from,
+            TimedSliceNode::Block {
+                block_id: BlockId(1),
+                ..
+            }
+        ) && matches!(
+            edge.to,
+            TimedSliceNode::Block {
+                block_id: BlockId(3),
+                ..
+            }
+        ) && edge.signal.as_ref().map(|signal| signal.name.as_str()) == Some("left_src")
     }));
     assert!(path.edges.iter().any(|edge| {
-        edge.from.block_id.0 == 2
-            && edge.to.block_id.0 == 3
-            && edge.signal.as_ref().map(|signal| signal.name.as_str()) == Some("right_src")
+        matches!(
+            edge.from,
+            TimedSliceNode::Block {
+                block_id: BlockId(2),
+                ..
+            }
+        ) && matches!(
+            edge.to,
+            TimedSliceNode::Block {
+                block_id: BlockId(3),
+                ..
+            }
+        ) && edge.signal.as_ref().map(|signal| signal.name.as_str()) == Some("right_src")
+    }));
+}
+
+#[test]
+fn blues_keeps_literals_as_terminal_nodes() {
+    let block_set = BlockSet::new(vec![Block::new(
+        BlockId(2),
+        BlockType::Always,
+        CircuitType::Sequential,
+        "demo",
+        "design.sv",
+        53,
+        55,
+        vec![DataflowEntry {
+            output: vec![SignalNode::named("result")],
+            inputs: HashSet::from([SignalNode::named("rst_n"), SignalNode::literal("8'h0")]),
+        }],
+        "always_ff @(posedge clk or negedge rst_n) if (!rst_n) result <= 8'h0;",
+    )
+    .unwrap()])
+    .unwrap();
+
+    let path = BluesSlicer::new(
+        block_set,
+        Arc::new(FixtureCoverage::covered([("design.sv", 53, 2)])),
+    )
+    .slice(&SliceRequest {
+        signal: SignalNode::named("result"),
+        time: Timestamp(3),
+        min_time: Timestamp(0),
+    })
+    .unwrap();
+
+    assert!(path.nodes.iter().any(|node| match node {
+        TimedSliceNode::Literal { signal, time } => {
+            signal.kind == SignalNodeKind::Literal && signal.name == "8'h0" && time.0 == 2
+        }
+        _ => false,
+    }));
+    assert!(path.edges.iter().any(|edge| match (&edge.from, &edge.to) {
+        (
+            TimedSliceNode::Literal { signal, time },
+            TimedSliceNode::Block {
+                block_id,
+                time: sink_time,
+            },
+        ) => {
+            signal.name == "8'h0"
+                && time.0 == 2
+                && block_id.0 == 2
+                && sink_time.0 == 3
+                && edge.signal.is_none()
+        }
+        _ => false,
     }));
 }
 

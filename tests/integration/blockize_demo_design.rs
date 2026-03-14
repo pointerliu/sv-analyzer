@@ -359,6 +359,42 @@ fn captures_demo_design_line_ranges_code_snippets_and_top_level_outputs() {
     assert!(next_state_exec_json_inputs.contains(&("state".to_string(), 33, 848)));
     assert!(next_state_exec_json_inputs.contains(&("op".to_string(), 35, 995)));
 
+    let reset_result_entry = block_set
+        .blocks()
+        .iter()
+        .find(|block| {
+            matches!(block.block_type(), BlockType::Always)
+                && matches!(
+                    block.circuit_type(),
+                    dac26_mcp::block::CircuitType::Sequential
+                )
+                && block.line_start() == 53
+                && block.line_end() == 79
+        })
+        .unwrap()
+        .dataflow()
+        .iter()
+        .find(|entry| {
+            entry.output.len() == 1
+                && entry.output[0].name == "result"
+                && entry.output[0].locate.line == 55
+        })
+        .unwrap();
+    let reset_result_inputs = reset_result_entry
+        .inputs
+        .iter()
+        .map(|signal| {
+            (
+                signal.kind.as_str().to_string(),
+                signal.name.clone(),
+                signal.locate.line,
+                signal.locate.offset,
+            )
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(reset_result_inputs.contains(&("variable".to_string(), "rst_n".to_string(), 54, 1676,)));
+    assert!(reset_result_inputs.contains(&("literal".to_string(), "8'h0".to_string(), 55, 1713,)));
+
     let result_output_json = json["blocks"]
         .as_array()
         .unwrap()
@@ -369,6 +405,45 @@ fn captures_demo_design_line_ranges_code_snippets_and_top_level_outputs() {
         })
         .unwrap();
     assert_eq!(result_output_json["output_signals"], serde_json::json!([]));
+
+    let reset_result_json = json["blocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|block| block["line_start"] == 53 && block["line_end"] == 79)
+        .unwrap()["dataflow"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| {
+            entry["output"][0]["name"] == "result" && entry["output"][0]["locate"]["line"] == 55
+        })
+        .unwrap();
+    let reset_result_json_inputs = reset_result_json["inputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|signal| {
+            (
+                signal["kind"].as_str().unwrap().to_string(),
+                signal["name"].as_str().unwrap().to_string(),
+                signal["locate"]["line"].as_u64().unwrap(),
+                signal["locate"]["offset"].as_u64().unwrap(),
+            )
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(reset_result_json_inputs.contains(&(
+        "variable".to_string(),
+        "rst_n".to_string(),
+        54,
+        1676,
+    )));
+    assert!(reset_result_json_inputs.contains(&(
+        "literal".to_string(),
+        "8'h0".to_string(),
+        55,
+        1713,
+    )));
     assert!(result_output_json.get("code_snippet").is_some());
     assert!(result_output_json.get("ast_snippet").is_none());
 }

@@ -49,7 +49,7 @@ fn extracts_statement_level_dataflow_from_assignments_and_conditions() {
         entry("sample", "Always", "Combinational", &["p"], &["a", "op"]),
         entry("sample", "Always", "Combinational", &["t"], &["a"]),
         entry("sample", "Always", "Combinational", &["temp_init"], &["b"]),
-        entry("sample", "Always", "Sequential", &["q"], &["c", "q"]),
+        entry("sample", "Always", "Sequential", &["q"], &["1", "c", "q"]),
         entry("sample", "Always", "Sequential", &["q"], &["c", "next_q"]),
         entry("sample", "Always", "Sequential", &["s"], &["q"]),
         entry(

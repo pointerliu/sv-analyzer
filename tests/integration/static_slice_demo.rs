@@ -4,12 +4,12 @@ use dac26_mcp::block::{Block, BlockSet, BlockType, CircuitType, DataflowEntry};
 use dac26_mcp::slicer::{
     InstructionExecutionPath, SliceGraph, SliceRequest, StaticBlockNode, StaticSlicer,
 };
-use dac26_mcp::types::{BlockId, BlockNode, SignalNode, Timestamp};
+use dac26_mcp::types::{BlockId, SignalNode, SignalNodeKind, TimedSliceNode, Timestamp};
 
 #[test]
 fn instruction_execution_path_uses_shared_graph_container() {
     let path: InstructionExecutionPath = SliceGraph {
-        nodes: vec![BlockNode {
+        nodes: vec![TimedSliceNode::Block {
             block_id: BlockId(99),
             time: Timestamp(7),
         }],
@@ -17,7 +17,13 @@ fn instruction_execution_path_uses_shared_graph_container() {
         blocks: Vec::new(),
     };
 
-    assert_eq!(path.nodes[0].time.0, 7);
+    assert!(matches!(
+        path.nodes[0],
+        TimedSliceNode::Block {
+            block_id: BlockId(99),
+            time: Timestamp(7)
+        }
+    ));
 }
 
 #[test]
@@ -74,7 +80,10 @@ fn static_slice_returns_timeless_graph_for_transitive_dependencies() {
         graph
             .nodes
             .iter()
-            .map(|node| node.block_id.0)
+            .filter_map(|node| match node {
+                StaticBlockNode::Block { block_id } => Some(block_id.0),
+                StaticBlockNode::Literal { .. } => None,
+            })
             .collect::<Vec<_>>(),
         vec![1, 2, 3]
     );
@@ -84,13 +93,22 @@ fn static_slice_returns_timeless_graph_for_transitive_dependencies() {
             .iter()
             .map(|edge| {
                 (
-                    edge.from.block_id.0,
-                    edge.to.block_id.0,
+                    match &edge.from {
+                        StaticBlockNode::Block { block_id } => Some(block_id.0),
+                        StaticBlockNode::Literal { .. } => None,
+                    },
+                    match &edge.to {
+                        StaticBlockNode::Block { block_id } => Some(block_id.0),
+                        StaticBlockNode::Literal { .. } => None,
+                    },
                     edge.signal.as_ref().map(|signal| signal.name.as_str()),
                 )
             })
             .collect::<Vec<_>>(),
-        vec![(1, 2, Some("tmp")), (2, 3, Some("result"))]
+        vec![
+            (Some(1), Some(2), Some("tmp")),
+            (Some(2), Some(3), Some("result"))
+        ]
     );
     assert_eq!(
         graph
@@ -106,6 +124,47 @@ fn static_slice_returns_timeless_graph_for_transitive_dependencies() {
         !json.contains("\"time\""),
         "static slice graph must not contain time annotations: {json}"
     );
+}
+
+#[test]
+fn static_slice_keeps_literals_as_terminal_nodes() {
+    let block_set = BlockSet::new(vec![Block::new(
+        BlockId(1),
+        BlockType::Always,
+        CircuitType::Sequential,
+        "demo",
+        "design.sv",
+        53,
+        55,
+        vec![DataflowEntry {
+            output: vec![SignalNode::named("result")],
+            inputs: HashSet::from([SignalNode::named("rst_n"), SignalNode::literal("8'h0")]),
+        }],
+        "always_ff @(posedge clk or negedge rst_n) if (!rst_n) result <= 8'h0;",
+    )
+    .unwrap()])
+    .unwrap();
+
+    let graph = StaticSlicer::new(block_set)
+        .slice(&SliceRequest {
+            signal: SignalNode::named("result"),
+            time: Timestamp(20),
+            min_time: Timestamp(-5),
+        })
+        .unwrap();
+
+    assert!(graph.nodes.iter().any(|node| match node {
+        StaticBlockNode::Literal { signal } => {
+            signal.kind == SignalNodeKind::Literal && signal.name == "8'h0"
+        }
+        _ => false,
+    }));
+    assert!(graph.edges.iter().any(|edge| match (&edge.from, &edge.to) {
+        (StaticBlockNode::Literal { signal }, StaticBlockNode::Block { block_id }) => {
+            signal.name == "8'h0" && block_id.0 == 1 && edge.signal.is_none()
+        }
+        _ => false,
+    }));
 }
 
 fn entry(outputs: &[&str], inputs: &[&str]) -> DataflowEntry {

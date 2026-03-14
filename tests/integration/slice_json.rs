@@ -1,28 +1,28 @@
 use dac26_mcp::slicer::{
-    InstructionExecutionPath, SliceBlock, SliceEdge, SliceGraph, StaticBlockNode,
+    InstructionExecutionPath, SliceBlock, SliceEdge, SliceGraph, StaticBlockNode, TimedSliceNode,
 };
-use dac26_mcp::types::{BlockId, BlockNode, SignalNode, Timestamp};
+use dac26_mcp::types::{BlockId, SignalNode, Timestamp};
 use serde_json::json;
 
 #[test]
 fn instruction_execution_path_serializes_as_stable_json_graph() {
     let path: InstructionExecutionPath = SliceGraph {
         nodes: vec![
-            BlockNode {
+            TimedSliceNode::Block {
                 block_id: BlockId(17),
                 time: Timestamp(19),
             },
-            BlockNode {
+            TimedSliceNode::Block {
                 block_id: BlockId(23),
                 time: Timestamp(18),
             },
         ],
         edges: vec![SliceEdge {
-            from: BlockNode {
+            from: TimedSliceNode::Block {
                 block_id: BlockId(23),
                 time: Timestamp(18),
             },
-            to: BlockNode {
+            to: TimedSliceNode::Block {
                 block_id: BlockId(17),
                 time: Timestamp(19),
             },
@@ -42,11 +42,13 @@ fn instruction_execution_path_serializes_as_stable_json_graph() {
         json!({
             "nodes": [
                 {
+                    "kind": "block",
                     "id": 0,
                     "block_id": 17,
                     "time": 19
                 },
                 {
+                    "kind": "block",
                     "id": 1,
                     "block_id": 23,
                     "time": 18
@@ -57,6 +59,7 @@ fn instruction_execution_path_serializes_as_stable_json_graph() {
                     "from": 1,
                     "to": 0,
                     "signal": {
+                        "kind": "variable",
                         "name": "result",
                         "locate": {
                             "offset": 0,
@@ -80,7 +83,7 @@ fn instruction_execution_path_serializes_as_stable_json_graph() {
 #[test]
 fn static_slice_graph_serializes_without_time_annotations() {
     let graph: SliceGraph<StaticBlockNode> = SliceGraph {
-        nodes: vec![StaticBlockNode {
+        nodes: vec![StaticBlockNode::Block {
             block_id: BlockId(5),
         }],
         edges: Vec::new(),
@@ -98,6 +101,7 @@ fn static_slice_graph_serializes_without_time_annotations() {
         json!({
             "nodes": [
                 {
+                    "kind": "block",
                     "id": 0,
                     "block_id": 5
                 }
@@ -118,11 +122,11 @@ fn static_slice_graph_serializes_without_time_annotations() {
 fn stable_export_rejects_duplicate_dynamic_nodes() {
     let graph: InstructionExecutionPath = SliceGraph {
         nodes: vec![
-            BlockNode {
+            TimedSliceNode::Block {
                 block_id: BlockId(17),
                 time: Timestamp(19),
             },
-            BlockNode {
+            TimedSliceNode::Block {
                 block_id: BlockId(17),
                 time: Timestamp(19),
             },
@@ -145,10 +149,10 @@ fn stable_export_rejects_duplicate_dynamic_nodes() {
 fn stable_export_rejects_duplicate_static_nodes() {
     let graph: SliceGraph<StaticBlockNode> = SliceGraph {
         nodes: vec![
-            StaticBlockNode {
+            StaticBlockNode::Block {
                 block_id: BlockId(5),
             },
-            StaticBlockNode {
+            StaticBlockNode::Block {
                 block_id: BlockId(5),
             },
         ],

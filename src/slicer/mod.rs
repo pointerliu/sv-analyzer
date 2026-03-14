@@ -2,13 +2,12 @@ pub mod blues;
 pub mod static_slice;
 
 use anyhow::{anyhow, Result};
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::types::{
-    BlockId, BlockJson as StableBlockJson, BlockNode, SignalNode, StableSliceEdgeJson,
-    StableSliceGraphJson, StableSliceNode, StableSliceNodeJson, Timestamp,
+    BlockJson as StableBlockJson, SignalNode, StableSliceEdgeJson, StableSliceGraphJson,
+    StableSliceNode, StableSliceNodeKey, StaticSliceNode, Timestamp,
 };
 
 pub use blues::BluesSlicer;
@@ -19,21 +18,6 @@ pub struct SliceRequest {
     pub signal: SignalNode,
     pub time: Timestamp,
     pub min_time: Timestamp,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct StaticBlockNode {
-    pub block_id: crate::types::BlockId,
-}
-
-impl StableSliceNode for StaticBlockNode {
-    fn block_id(&self) -> BlockId {
-        self.block_id
-    }
-
-    fn time(&self) -> Option<Timestamp> {
-        None
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,17 +48,32 @@ where
     pub fn stable_json_graph(&self) -> Result<StableSliceGraphJson> {
         let mut node_index_by_key = HashMap::with_capacity(self.nodes.len());
         for (index, node) in self.nodes.iter().enumerate() {
-            let key = (node.block_id(), node.time());
+            let key = node.stable_key();
             if node_index_by_key.insert(key, index).is_some() {
-                let duplicate = match key.1 {
-                    Some(time) => {
-                        anyhow!(
-                            "duplicate slice node for block_id={} time={}",
-                            key.0 .0,
-                            time.0
-                        )
+                let duplicate = match &node.stable_key() {
+                    StableSliceNodeKey::Block {
+                        block_id,
+                        time: Some(time),
+                    } => anyhow!(
+                        "duplicate slice node for block_id={} time={}",
+                        block_id.0,
+                        time.0
+                    ),
+                    StableSliceNodeKey::Block {
+                        block_id,
+                        time: None,
+                    } => anyhow!("duplicate slice node for block_id={}", block_id.0),
+                    StableSliceNodeKey::Literal {
+                        signal,
+                        time: Some(time),
+                    } => anyhow!(
+                        "duplicate literal slice node for signal={} time={}",
+                        signal.name,
+                        time.0
+                    ),
+                    StableSliceNodeKey::Literal { signal, time: None } => {
+                        anyhow!("duplicate literal slice node for signal={}", signal.name)
                     }
-                    None => anyhow!("duplicate slice node for block_id={}", key.0 .0),
                 };
                 return Err(duplicate);
             }
@@ -85,18 +84,14 @@ where
                 .nodes
                 .iter()
                 .enumerate()
-                .map(|(index, node)| StableSliceNodeJson {
-                    id: index,
-                    block_id: node.block_id(),
-                    time: node.time(),
-                })
+                .map(|(index, node)| node.stable_json(index))
                 .collect(),
             edges: self
                 .edges
                 .iter()
                 .map(|edge| StableSliceEdgeJson {
-                    from: node_index_by_key[&(edge.from.block_id(), edge.from.time())],
-                    to: node_index_by_key[&(edge.to.block_id(), edge.to.time())],
+                    from: node_index_by_key[&edge.from.stable_key()],
+                    to: node_index_by_key[&edge.to.stable_key()],
                     signal: edge.signal.clone(),
                 })
                 .collect(),
@@ -119,30 +114,29 @@ where
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer,
+        S: serde::Serializer,
     {
-        let stable = self
-            .stable_json_graph()
-            .map_err(serde::ser::Error::custom)?;
-        let mut state = serializer.serialize_struct("SliceGraph", 3)?;
-        state.serialize_field("nodes", &stable.nodes)?;
-        state.serialize_field("edges", &stable.edges)?;
-        state.serialize_field("blocks", &stable.blocks)?;
-        state.end()
+        self.stable_json_graph()
+            .map_err(serde::ser::Error::custom)?
+            .serialize(serializer)
     }
 }
 
-pub type StaticBlockEdge = SliceEdge<StaticBlockNode>;
+pub type StaticBlockNode = StaticSliceNode;
+
+pub type TimedSliceNode = crate::types::TimedSliceNode;
+
+pub type StaticBlockEdge = SliceEdge<StaticSliceNode>;
 
 pub type StaticBlockJson = SliceBlock;
 
-pub type StaticSliceGraph = SliceGraph<StaticBlockNode>;
+pub type StaticSliceGraph = SliceGraph<StaticSliceNode>;
 
-pub type BlockEdgeJson = SliceEdge<BlockNode>;
+pub type BlockEdgeJson = SliceEdge<TimedSliceNode>;
 
 pub type BlockJson = SliceBlock;
 
-pub type InstructionExecutionPath = SliceGraph<BlockNode>;
+pub type InstructionExecutionPath = SliceGraph<TimedSliceNode>;
 
 pub trait Slicer {
     fn slice(&self, request: &SliceRequest) -> Result<InstructionExecutionPath>;

@@ -634,14 +634,14 @@ fn identifier_signal_node(
     node: RefNode,
 ) -> crate::types::SignalNode {
     let name = identifier_text(syntax_tree, node.clone());
-    crate::types::SignalNode::new(name, locate_from_node(node))
+    crate::types::SignalNode::variable(name, locate_from_node(node))
 }
 
 fn hierarchical_variable_identifier_signal_node(
     syntax_tree: &sv_parser::SyntaxTree,
     node: &sv_parser::HierarchicalVariableIdentifier,
 ) -> crate::types::SignalNode {
-    crate::types::SignalNode::new(
+    crate::types::SignalNode::variable(
         hierarchical_variable_identifier_text(syntax_tree, node),
         locate_from_node(node.into()),
     )
@@ -651,7 +651,7 @@ fn ps_or_hierarchical_net_identifier_signal_node(
     syntax_tree: &sv_parser::SyntaxTree,
     node: &sv_parser::PsOrHierarchicalNetIdentifier,
 ) -> crate::types::SignalNode {
-    crate::types::SignalNode::new(
+    crate::types::SignalNode::variable(
         ps_or_hierarchical_net_identifier_text(syntax_tree, node),
         locate_from_node(node.into()),
     )
@@ -661,7 +661,7 @@ fn hierarchical_identifier_signal_node(
     syntax_tree: &sv_parser::SyntaxTree,
     node: &sv_parser::HierarchicalIdentifier,
 ) -> crate::types::SignalNode {
-    crate::types::SignalNode::new(
+    crate::types::SignalNode::variable(
         hierarchical_identifier_text(syntax_tree, node),
         locate_from_node(node.into()),
     )
@@ -1243,11 +1243,66 @@ fn signal_nodes_from_node_text(
             RefNode::PortIdentifier(id) => {
                 names.insert(identifier_signal_node(syntax_tree, id.into()));
             }
+            RefNode::Number(number) => {
+                let text = syntax_tree
+                    .get_str(number)
+                    .map(str::trim)
+                    .unwrap_or_default()
+                    .to_string();
+                names.insert(crate::types::SignalNode::literal_with_locate(
+                    text,
+                    locate_from_node(number.into()),
+                ));
+            }
+            RefNode::PrimaryLiteral(literal) => {
+                let text = syntax_tree
+                    .get_str(literal)
+                    .map(str::trim)
+                    .unwrap_or_default()
+                    .to_string();
+                names.insert(crate::types::SignalNode::literal_with_locate(
+                    text,
+                    locate_from_node(literal.into()),
+                ));
+            }
+            RefNode::TimeLiteral(literal) => {
+                let text = syntax_tree
+                    .get_str(literal)
+                    .map(str::trim)
+                    .unwrap_or_default()
+                    .to_string();
+                names.insert(crate::types::SignalNode::literal_with_locate(
+                    text,
+                    locate_from_node(literal.into()),
+                ));
+            }
+            RefNode::StringLiteral(literal) => {
+                let text = syntax_tree
+                    .get_str(literal)
+                    .map(str::trim)
+                    .unwrap_or_default()
+                    .to_string();
+                names.insert(crate::types::SignalNode::literal_with_locate(
+                    text,
+                    locate_from_node(literal.into()),
+                ));
+            }
+            RefNode::UnbasedUnsizedLiteral(literal) => {
+                let text = syntax_tree
+                    .get_str(literal)
+                    .map(str::trim)
+                    .unwrap_or_default()
+                    .to_string();
+                names.insert(crate::types::SignalNode::literal_with_locate(
+                    text,
+                    locate_from_node(literal.into()),
+                ));
+            }
             _ => {}
         }
     }
 
-    names.retain(|name| is_signal_name(name.as_str()));
+    names.retain(|signal| signal.is_literal() || is_signal_name(signal.as_str()));
     names
 }
 

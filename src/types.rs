@@ -26,33 +26,72 @@ impl SignalLocate {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SignalNodeKind {
+    Variable,
+    Literal,
+}
+
+impl SignalNodeKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Variable => "variable",
+            Self::Literal => "literal",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SignalNode {
+    pub kind: SignalNodeKind,
     pub name: String,
     pub locate: SignalLocate,
 }
 
 impl SignalNode {
-    pub fn new(name: impl Into<String>, locate: SignalLocate) -> Self {
+    pub fn new(kind: SignalNodeKind, name: impl Into<String>, locate: SignalLocate) -> Self {
         Self {
+            kind,
             name: name.into(),
             locate,
         }
     }
 
+    pub fn variable(name: impl Into<String>, locate: SignalLocate) -> Self {
+        Self::new(SignalNodeKind::Variable, name, locate)
+    }
+
+    pub fn literal_with_locate(text: impl Into<String>, locate: SignalLocate) -> Self {
+        Self::new(SignalNodeKind::Literal, text, locate)
+    }
+
     pub fn named(name: impl Into<String>) -> Self {
         let name = name.into();
-        Self::new(name.clone(), SignalLocate::unknown(name.len()))
+        Self::variable(name.clone(), SignalLocate::unknown(name.len()))
+    }
+
+    pub fn literal(text: impl Into<String>) -> Self {
+        let text = text.into();
+        Self::literal_with_locate(text.clone(), SignalLocate::unknown(text.len()))
     }
 
     pub fn as_str(&self) -> &str {
         &self.name
     }
+
+    pub fn is_variable(&self) -> bool {
+        self.kind == SignalNodeKind::Variable
+    }
+
+    pub fn is_literal(&self) -> bool {
+        self.kind == SignalNodeKind::Literal
+    }
 }
 
 impl PartialEq for SignalNode {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
+        self.kind == other.kind && self.name == other.name
     }
 }
 
@@ -60,37 +99,40 @@ impl Eq for SignalNode {}
 
 impl Hash for SignalNode {
     fn hash<H: Hasher>(&self, state: &mut H) {
+        self.kind.hash(state);
         self.name.hash(state);
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct BlockNode {
-    pub block_id: BlockId,
-    pub time: Timestamp,
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum StaticSliceNode {
+    Block { block_id: BlockId },
+    Literal { signal: SignalNode },
 }
 
-pub trait StableSliceNode {
-    fn block_id(&self) -> BlockId;
-    fn time(&self) -> Option<Timestamp>;
-}
-
-impl StableSliceNode for BlockNode {
-    fn block_id(&self) -> BlockId {
-        self.block_id
-    }
-
-    fn time(&self) -> Option<Timestamp> {
-        Some(self.time)
-    }
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TimedSliceNode {
+    Block { block_id: BlockId, time: Timestamp },
+    Literal { signal: SignalNode, time: Timestamp },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StableSliceNodeJson {
-    pub id: usize,
-    pub block_id: BlockId,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub time: Option<Timestamp>,
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum StableSliceNodeJson {
+    Block {
+        id: usize,
+        block_id: BlockId,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        time: Option<Timestamp>,
+    },
+    Literal {
+        id: usize,
+        signal: SignalNode,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        time: Option<Timestamp>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,8 +152,9 @@ pub struct StableSliceGraphJson {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockEdgeJson {
-    pub from: BlockNode,
-    pub to: BlockNode,
+    pub from: TimedSliceNode,
+    pub to: TimedSliceNode,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub signal: Option<SignalNode>,
 }
 
@@ -124,9 +167,86 @@ pub struct BlockJson {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TraceGraphJson {
-    pub nodes: Vec<BlockNode>,
+    pub nodes: Vec<TimedSliceNode>,
     pub edges: Vec<BlockEdgeJson>,
     pub blocks: Vec<BlockJson>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum StableSliceNodeKey {
+    Block {
+        block_id: BlockId,
+        time: Option<Timestamp>,
+    },
+    Literal {
+        signal: SignalNode,
+        time: Option<Timestamp>,
+    },
+}
+
+pub trait StableSliceNode {
+    fn stable_key(&self) -> StableSliceNodeKey;
+    fn stable_json(&self, id: usize) -> StableSliceNodeJson;
+}
+
+impl StableSliceNode for StaticSliceNode {
+    fn stable_key(&self) -> StableSliceNodeKey {
+        match self {
+            Self::Block { block_id } => StableSliceNodeKey::Block {
+                block_id: *block_id,
+                time: None,
+            },
+            Self::Literal { signal } => StableSliceNodeKey::Literal {
+                signal: signal.clone(),
+                time: None,
+            },
+        }
+    }
+
+    fn stable_json(&self, id: usize) -> StableSliceNodeJson {
+        match self {
+            Self::Block { block_id } => StableSliceNodeJson::Block {
+                id,
+                block_id: *block_id,
+                time: None,
+            },
+            Self::Literal { signal } => StableSliceNodeJson::Literal {
+                id,
+                signal: signal.clone(),
+                time: None,
+            },
+        }
+    }
+}
+
+impl StableSliceNode for TimedSliceNode {
+    fn stable_key(&self) -> StableSliceNodeKey {
+        match self {
+            Self::Block { block_id, time } => StableSliceNodeKey::Block {
+                block_id: *block_id,
+                time: Some(*time),
+            },
+            Self::Literal { signal, time } => StableSliceNodeKey::Literal {
+                signal: signal.clone(),
+                time: Some(*time),
+            },
+        }
+    }
+
+    fn stable_json(&self, id: usize) -> StableSliceNodeJson {
+        match self {
+            Self::Block { block_id, time } => StableSliceNodeJson::Block {
+                id,
+                block_id: *block_id,
+                time: Some(*time),
+            },
+            Self::Literal { signal, time } => StableSliceNodeJson::Literal {
+                id,
+                signal: signal.clone(),
+                time: Some(*time),
+            },
+        }
+    }
 }
 
 pub fn serialize_signal_name_set<S>(

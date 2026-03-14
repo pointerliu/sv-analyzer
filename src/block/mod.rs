@@ -48,6 +48,9 @@ impl BlockSet {
             }
 
             for signal in &block.output_signals {
+                if !signal.is_variable() {
+                    continue;
+                }
                 signal_to_drivers
                     .entry(signal.clone())
                     .or_default()

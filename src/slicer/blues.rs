@@ -6,14 +6,13 @@ use anyhow::Result;
 use crate::block::{Block, BlockSet, CircuitType};
 use crate::coverage::CoverageTracker;
 use crate::slicer::{BlockEdgeJson, BlockJson, InstructionExecutionPath, SliceRequest, Slicer};
-use crate::types::{BlockId, BlockNode, SignalNode, Timestamp};
+use crate::types::{BlockId, SignalNode, TimedSliceNode, Timestamp};
 
-type TimedBlockKey = (BlockId, i64);
-type TimedEdgeKey = (TimedBlockKey, TimedBlockKey, Option<SignalNode>);
+type TimedEdgeKey = (TimedSliceNode, TimedSliceNode, Option<SignalNode>);
 
 struct SliceAccum<'a> {
-    node_keys: &'a mut HashSet<TimedBlockKey>,
-    edge_keys: &'a mut HashSet<TimedEdgeKey>,
+    nodes: &'a mut HashSet<TimedSliceNode>,
+    edges: &'a mut HashSet<TimedEdgeKey>,
     block_ids: &'a mut HashSet<BlockId>,
 }
 
@@ -44,12 +43,15 @@ impl BluesSlicer {
         let mut queued = HashSet::from([(request.signal.clone(), request.time.0)]);
         let mut visited_signals = HashSet::new();
         let mut visited_driver_outputs = HashSet::new();
-        let mut node_keys = HashSet::new();
+        let mut nodes = HashSet::new();
         let mut edge_keys: HashSet<TimedEdgeKey> = HashSet::new();
         let mut block_ids = HashSet::new();
 
         while let Some((signal, time)) = work.pop_front() {
-            if time.0 < request.min_time.0 || !visited_signals.insert((signal.clone(), time.0)) {
+            if signal.is_literal()
+                || time.0 < request.min_time.0
+                || !visited_signals.insert((signal.clone(), time.0))
+            {
                 continue;
             }
 
@@ -58,23 +60,42 @@ impl BluesSlicer {
                     continue;
                 };
 
-                let driver_key = (driver.id(), time.0);
+                let driver_node = TimedSliceNode::Block {
+                    block_id: driver.id(),
+                    time,
+                };
                 if !visited_driver_outputs.insert((driver.id(), time.0, signal.clone())) {
                     continue;
                 }
 
-                node_keys.insert(driver_key);
+                nodes.insert(driver_node.clone());
                 block_ids.insert(driver.id());
 
                 match driver.circuit_type() {
                     CircuitType::Combinational => {
                         for input in inputs_for_output(driver, &signal) {
+                            if input.is_literal() {
+                                nodes.insert(TimedSliceNode::Literal {
+                                    signal: input.clone(),
+                                    time,
+                                });
+                                edge_keys.insert((
+                                    TimedSliceNode::Literal {
+                                        signal: input,
+                                        time,
+                                    },
+                                    driver_node.clone(),
+                                    None,
+                                ));
+                                continue;
+                            }
+
                             add_upstream_edges(
                                 &self.block_set,
                                 &self.blocks_by_id,
                                 &mut SliceAccum {
-                                    node_keys: &mut node_keys,
-                                    edge_keys: &mut edge_keys,
+                                    nodes: &mut nodes,
+                                    edges: &mut edge_keys,
                                     block_ids: &mut block_ids,
                                 },
                                 &input,
@@ -99,10 +120,17 @@ impl BluesSlicer {
                             driver.line_start(),
                             previous_time,
                         )? {
-                            let previous_node = (driver.id(), previous_time.0);
-                            node_keys.insert(previous_node);
+                            let previous_node = TimedSliceNode::Block {
+                                block_id: driver.id(),
+                                time: previous_time,
+                            };
+                            nodes.insert(previous_node.clone());
                             block_ids.insert(driver.id());
-                            edge_keys.insert((previous_node, driver_key, Some(signal.clone())));
+                            edge_keys.insert((
+                                previous_node,
+                                driver_node.clone(),
+                                Some(signal.clone()),
+                            ));
 
                             if queued.insert((signal.clone(), previous_time.0)) {
                                 work.push_back((signal.clone(), previous_time));
@@ -111,12 +139,22 @@ impl BluesSlicer {
                         }
 
                         for input in inputs_for_output(driver, &signal) {
+                            if input.is_literal() {
+                                let literal_node = TimedSliceNode::Literal {
+                                    signal: input,
+                                    time: previous_time,
+                                };
+                                nodes.insert(literal_node.clone());
+                                edge_keys.insert((literal_node, driver_node.clone(), None));
+                                continue;
+                            }
+
                             add_upstream_edges(
                                 &self.block_set,
                                 &self.blocks_by_id,
                                 &mut SliceAccum {
-                                    node_keys: &mut node_keys,
-                                    edge_keys: &mut edge_keys,
+                                    nodes: &mut nodes,
+                                    edges: &mut edge_keys,
                                     block_ids: &mut block_ids,
                                 },
                                 &input,
@@ -134,51 +172,20 @@ impl BluesSlicer {
             }
         }
 
-        let mut node_keys = node_keys.into_iter().collect::<Vec<_>>();
-        node_keys.sort_by_key(|(block_id, time)| (time.to_owned(), block_id.0));
+        let mut nodes = nodes.into_iter().collect::<Vec<_>>();
+        nodes.sort_by(|left, right| format!("{:?}", left).cmp(&format!("{:?}", right)));
 
         let mut edge_keys = edge_keys.into_iter().collect::<Vec<_>>();
-        edge_keys.sort_by(|left, right| {
-            (
-                left.0 .1,
-                left.0 .0 .0,
-                left.1 .1,
-                left.1 .0 .0,
-                left.2.as_ref().map(|signal| signal.as_str()),
-            )
-                .cmp(&(
-                    right.0 .1,
-                    right.0 .0 .0,
-                    right.1 .1,
-                    right.1 .0 .0,
-                    right.2.as_ref().map(|signal| signal.as_str()),
-                ))
-        });
+        edge_keys.sort_by(|left, right| format!("{:?}", left).cmp(&format!("{:?}", right)));
 
         let mut block_ids = block_ids.into_iter().collect::<Vec<_>>();
         block_ids.sort_by_key(|block_id| block_id.0);
 
         Ok(InstructionExecutionPath {
-            nodes: node_keys
-                .iter()
-                .map(|(block_id, time)| BlockNode {
-                    block_id: *block_id,
-                    time: Timestamp(*time),
-                })
-                .collect(),
+            nodes,
             edges: edge_keys
                 .into_iter()
-                .map(|(from, to, signal)| BlockEdgeJson {
-                    from: BlockNode {
-                        block_id: from.0,
-                        time: Timestamp(from.1),
-                    },
-                    to: BlockNode {
-                        block_id: to.0,
-                        time: Timestamp(to.1),
-                    },
-                    signal,
-                })
+                .map(|(from, to, signal)| BlockEdgeJson { from, to, signal })
                 .collect(),
             blocks: block_ids
                 .into_iter()
@@ -213,12 +220,18 @@ fn add_upstream_edges(
             continue;
         }
 
-        let upstream_key = (*upstream_id, source_time.0);
-        accum.node_keys.insert(upstream_key);
+        let upstream_node = TimedSliceNode::Block {
+            block_id: *upstream_id,
+            time: source_time,
+        };
+        accum.nodes.insert(upstream_node.clone());
         accum.block_ids.insert(*upstream_id);
-        accum.edge_keys.insert((
-            upstream_key,
-            (sink_block_id, sink_time.0),
+        accum.edges.insert((
+            upstream_node,
+            TimedSliceNode::Block {
+                block_id: sink_block_id,
+                time: sink_time,
+            },
             Some(signal.clone()),
         ));
     }
