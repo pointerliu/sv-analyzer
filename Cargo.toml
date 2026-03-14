@@ -47,6 +47,10 @@ path = "tests/integration/read_trace_coverage.rs"
 name = "static_slice_demo"
 path = "tests/integration/static_slice_demo.rs"
 
+[[test]]
+name = "blues_demo"
+path = "tests/integration/blues_demo.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

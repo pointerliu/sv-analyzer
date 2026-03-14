@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::{BlockNode, SignalId, Timestamp};
 
+pub use blues::BluesSlicer;
 pub use static_slice::StaticSlicer;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
