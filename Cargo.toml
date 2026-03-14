@@ -55,12 +55,16 @@ path = "tests/integration/blues_demo.rs"
 name = "slice_json"
 path = "tests/integration/slice_json.rs"
 
+[[test]]
+name = "cli_blockize"
+path = "tests/integration/cli_blockize.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 sv-parser = "0.13.4"
 wellen = "0.20.3"
 
 [dev-dependencies]
-serde_json = "1"
