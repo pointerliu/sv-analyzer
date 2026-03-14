@@ -163,8 +163,12 @@ cargo run -- slice \
   --static \
   --sv demo/trace_coverage_demo/design.sv \
   --sv demo/trace_coverage_demo/tb.sv \
-  --signal result
+  --signal TOP.tb.result
 ```
+
+Use waveform-style hierarchical signal paths for slicing. `TOP` is the synthetic root,
+top-level testbench signals live under `TOP.tb`, and instantiated DUT signals live under
+paths such as `TOP.tb.dut.result`.
 
 Static slice output:
 
@@ -182,7 +186,7 @@ cargo run -- slice \
   --sv demo/trace_coverage_demo/design.sv \
   --sv demo/trace_coverage_demo/tb.sv \
   --vcd demo/trace_coverage_demo/logs/sim.vcd \
-  --signal result \
+  --signal TOP.tb.result \
   --time 40 \
   --min-time 0
 ```

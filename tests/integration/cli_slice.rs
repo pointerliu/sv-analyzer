@@ -52,6 +52,63 @@ fn cli_slice_outputs_graph_json_with_blues_by_default() {
 }
 
 #[test]
+fn cli_slice_dynamic_supports_scoped_signal_queries() {
+    let fixture = write_slice_fixture();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_main"))
+        .args([
+            "slice",
+            "--sv",
+            fixture.design.to_str().unwrap(),
+            "--sv",
+            fixture.testbench.to_str().unwrap(),
+            "--vcd",
+            fixture.vcd.to_str().unwrap(),
+            "--signal",
+            "TOP.tb.result",
+            "--time",
+            "1",
+            "--min-time",
+            "0",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let blocks = json["blocks"].as_array().unwrap();
+    let scopes = blocks
+        .iter()
+        .filter_map(|block| block["scope"].as_str())
+        .collect::<Vec<_>>();
+
+    assert!(
+        scopes.contains(&"TOP.tb"),
+        "expected dynamic slice to include the parent tb scope: {json:?}"
+    );
+    assert!(
+        scopes.contains(&"TOP.tb.dut"),
+        "expected dynamic slice to traverse into the instantiated dut scope: {json:?}"
+    );
+    assert!(
+        json["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|node| node.get("time").is_some()),
+        "dynamic slice should keep time annotations: {json:?}"
+    );
+
+    fixture.cleanup();
+}
+
+#[test]
 fn cli_slice_supports_static_graph_output() {
     let fixture = write_slice_fixture();
 
@@ -87,6 +144,56 @@ fn cli_slice_supports_static_graph_output() {
             .iter()
             .all(|node| node.get("time").is_none()),
         "static slice should omit time annotations: {json:?}"
+    );
+
+    fixture.cleanup();
+}
+
+#[test]
+fn cli_slice_resolves_scoped_signal_through_instance_boundaries() {
+    let fixture = write_slice_fixture();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_main"))
+        .args([
+            "slice",
+            "--static",
+            "--sv",
+            fixture.design.to_str().unwrap(),
+            "--sv",
+            fixture.testbench.to_str().unwrap(),
+            "--signal",
+            "TOP.tb.result",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let blocks = json["blocks"].as_array().unwrap();
+    let scopes = blocks
+        .iter()
+        .filter_map(|block| block["scope"].as_str())
+        .collect::<Vec<_>>();
+
+    assert!(
+        scopes.contains(&"TOP.tb"),
+        "expected slice to include the parent tb scope: {json:?}"
+    );
+    assert!(
+        scopes.contains(&"TOP.tb.dut"),
+        "expected slice to traverse into the instantiated dut scope: {json:?}"
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block["scope"] == "TOP.tb" && block["block_type"] == "ModOutput"),
+        "expected a boundary ModOutput block for the dut instance: {json:?}"
     );
 
     fixture.cleanup();

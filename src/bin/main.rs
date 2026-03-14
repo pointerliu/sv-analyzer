@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use dac26_mcp::ast::{AstProvider, SvParserProvider};
-use dac26_mcp::block::{Blockizer, DataflowBlockizer};
+use dac26_mcp::block::{elaborate_block_set, Blockizer, DataflowBlockizer};
 use dac26_mcp::coverage::{CoverageTracker, VcdCoverageTracker};
 use dac26_mcp::slicer::{BluesSlicer, SliceRequest, StaticSlicer};
 use dac26_mcp::types::{SignalNode, Timestamp};
@@ -144,7 +144,8 @@ fn run_coverage(args: CoverageArgs) -> Result<()> {
 fn run_slice(args: SliceArgs) -> Result<()> {
     if args.static_slice {
         let parsed_files = SvParserProvider.parse_files(&args.sv_files)?;
-        let block_set = DataflowBlockizer.blockize(&parsed_files)?;
+        let block_set =
+            elaborate_block_set(&parsed_files, &DataflowBlockizer.blockize(&parsed_files)?)?;
         let request = SliceRequest {
             signal: SignalNode::named(args.signal),
             time: Timestamp(0),
@@ -159,7 +160,8 @@ fn run_slice(args: SliceArgs) -> Result<()> {
     }
 
     let parsed_files = SvParserProvider.parse_files(&args.sv_files)?;
-    let block_set = DataflowBlockizer.blockize(&parsed_files)?;
+    let block_set =
+        elaborate_block_set(&parsed_files, &DataflowBlockizer.blockize(&parsed_files)?)?;
     let vcd = args
         .vcd
         .as_ref()

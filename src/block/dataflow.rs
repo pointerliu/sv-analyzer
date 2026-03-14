@@ -5,7 +5,7 @@ use sv_parser::{unwrap_locate, unwrap_node, RefNode};
 
 use super::{Block, BlockSet, BlockType, Blockizer, CircuitType, DataflowEntry};
 use crate::ast::ParsedFile;
-use crate::types::BlockId;
+use crate::types::{BlockId, SignalNode};
 
 #[derive(Debug, Default)]
 pub struct DataflowBlockizer;
@@ -20,6 +20,474 @@ impl Blockizer for DataflowBlockizer {
 
         BlockSet::new(merge_assign_blocks(collector.blocks)?)
     }
+}
+
+#[derive(Debug, Clone)]
+struct ModuleTemplate {
+    blocks: Vec<Block>,
+    port_order: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ModuleInstance {
+    module_name: String,
+    instance_name: String,
+    source_file: String,
+    line_start: usize,
+    line_end: usize,
+    code_snippet: String,
+    connections: HashMap<String, HashSet<SignalNode>>,
+}
+
+pub fn elaborate_block_set(
+    files: &[ParsedFile],
+    template_block_set: &BlockSet,
+) -> Result<BlockSet> {
+    let mut templates = module_templates_from_block_set(template_block_set);
+    add_empty_module_templates(files, &mut templates);
+    if templates.is_empty() {
+        return BlockSet::new(Vec::new());
+    }
+
+    let instances_by_module = collect_module_instances(files, &templates);
+    let instantiated_modules = instances_by_module
+        .values()
+        .flat_map(|instances| {
+            instances
+                .iter()
+                .map(|instance| instance.module_name.clone())
+        })
+        .collect::<HashSet<_>>();
+
+    let mut top_modules = templates
+        .keys()
+        .filter(|module_name| !instantiated_modules.contains(*module_name))
+        .cloned()
+        .collect::<Vec<_>>();
+    if top_modules.is_empty() {
+        top_modules = templates.keys().cloned().collect();
+    }
+    top_modules.sort();
+
+    let mut blocks = Vec::new();
+    let mut next_block_id = 0u64;
+    for module_name in top_modules {
+        let instance_path = format!("TOP.{module_name}");
+        elaborate_module_instance(
+            &module_name,
+            &instance_path,
+            None,
+            None,
+            &templates,
+            &instances_by_module,
+            &mut next_block_id,
+            &mut blocks,
+        )?;
+    }
+
+    BlockSet::new(blocks)
+}
+
+fn module_templates_from_block_set(block_set: &BlockSet) -> HashMap<String, ModuleTemplate> {
+    let mut templates = HashMap::new();
+
+    for block in block_set.blocks() {
+        let entry = templates
+            .entry(block.module_scope().to_string())
+            .or_insert_with(|| ModuleTemplate {
+                blocks: Vec::new(),
+                port_order: Vec::new(),
+            });
+
+        if let Some(port_name) = port_name_from_block(block) {
+            entry.port_order.push(port_name);
+        }
+
+        entry.blocks.push(block.clone());
+    }
+
+    templates
+}
+
+fn add_empty_module_templates(
+    files: &[ParsedFile],
+    templates: &mut HashMap<String, ModuleTemplate>,
+) {
+    for file in files {
+        for node in &file.syntax_tree {
+            match node {
+                RefNode::ModuleDeclarationAnsi(module) => {
+                    if let Some(module_name) = module_name_from_node(
+                        &file.syntax_tree,
+                        RefNode::ModuleDeclarationAnsi(module),
+                    ) {
+                        templates
+                            .entry(module_name)
+                            .or_insert_with(|| ModuleTemplate {
+                                blocks: Vec::new(),
+                                port_order: Vec::new(),
+                            });
+                    }
+                }
+                RefNode::ModuleDeclarationNonansi(module) => {
+                    if let Some(module_name) = module_name_from_node(
+                        &file.syntax_tree,
+                        RefNode::ModuleDeclarationNonansi(module),
+                    ) {
+                        templates
+                            .entry(module_name)
+                            .or_insert_with(|| ModuleTemplate {
+                                blocks: Vec::new(),
+                                port_order: Vec::new(),
+                            });
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+fn collect_module_instances(
+    files: &[ParsedFile],
+    templates: &HashMap<String, ModuleTemplate>,
+) -> HashMap<String, Vec<ModuleInstance>> {
+    let mut instances_by_module = HashMap::new();
+
+    for file in files {
+        let mut current_module = None;
+
+        for event in (&file.syntax_tree).into_iter().event() {
+            match event {
+                sv_parser::NodeEvent::Enter(RefNode::ModuleDeclarationAnsi(module)) => {
+                    current_module = module_name_from_node(&file.syntax_tree, module.into());
+                }
+                sv_parser::NodeEvent::Enter(RefNode::ModuleDeclarationNonansi(module)) => {
+                    current_module = module_name_from_node(&file.syntax_tree, module.into());
+                }
+                sv_parser::NodeEvent::Leave(RefNode::ModuleDeclarationAnsi(_))
+                | sv_parser::NodeEvent::Leave(RefNode::ModuleDeclarationNonansi(_)) => {
+                    current_module = None;
+                }
+                sv_parser::NodeEvent::Enter(RefNode::ModuleInstantiation(module_instantiation)) => {
+                    let Some(parent_module) = current_module.as_deref() else {
+                        continue;
+                    };
+
+                    let module_name =
+                        identifier_text(&file.syntax_tree, (&module_instantiation.nodes.0).into());
+                    let port_order = templates
+                        .get(&module_name)
+                        .map(|template| template.port_order.as_slice())
+                        .unwrap_or(&[]);
+                    let line_start = start_line(RefNode::ModuleInstantiation(module_instantiation));
+                    let line_end = line_start;
+                    let code_snippet = snippet_from_source(&file.source_text, line_start, line_end);
+
+                    for hierarchical_instance in module_instantiation.nodes.2.contents() {
+                        instances_by_module
+                            .entry(parent_module.to_string())
+                            .or_insert_with(Vec::new)
+                            .push(ModuleInstance {
+                                module_name: module_name.clone(),
+                                instance_name: identifier_text(
+                                    &file.syntax_tree,
+                                    (&hierarchical_instance.nodes.0.nodes.0).into(),
+                                ),
+                                source_file: file.path.display().to_string(),
+                                line_start,
+                                line_end,
+                                code_snippet: code_snippet.clone(),
+                                connections: module_instance_connections(
+                                    &file.syntax_tree,
+                                    hierarchical_instance,
+                                    port_order,
+                                ),
+                            });
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    for instances in instances_by_module.values_mut() {
+        instances.sort_by(|left, right| {
+            left.instance_name
+                .cmp(&right.instance_name)
+                .then_with(|| left.module_name.cmp(&right.module_name))
+                .then_with(|| left.line_start.cmp(&right.line_start))
+        });
+    }
+
+    instances_by_module
+}
+
+fn module_instance_connections(
+    syntax_tree: &sv_parser::SyntaxTree,
+    hierarchical_instance: &sv_parser::HierarchicalInstance,
+    port_order: &[String],
+) -> HashMap<String, HashSet<SignalNode>> {
+    let Some(port_connections) = hierarchical_instance.nodes.1.nodes.1.as_ref() else {
+        return HashMap::new();
+    };
+
+    match port_connections {
+        sv_parser::ListOfPortConnections::Named(named) => {
+            named_port_connections(syntax_tree, &named.nodes.0, port_order)
+        }
+        sv_parser::ListOfPortConnections::Ordered(ordered) => {
+            ordered_port_connections(syntax_tree, &ordered.nodes.0, port_order)
+        }
+    }
+}
+
+fn named_port_connections(
+    syntax_tree: &sv_parser::SyntaxTree,
+    connections: &sv_parser::List<sv_parser::Symbol, sv_parser::NamedPortConnection>,
+    port_order: &[String],
+) -> HashMap<String, HashSet<SignalNode>> {
+    let mut resolved = HashMap::new();
+    let mut wildcard = false;
+
+    for connection in connections.contents() {
+        match connection {
+            sv_parser::NamedPortConnection::Identifier(connection) => {
+                let port_name = identifier_text(syntax_tree, (&connection.nodes.2).into());
+                let signals = connection
+                    .nodes
+                    .3
+                    .as_ref()
+                    .and_then(|expression| expression.nodes.1.as_ref())
+                    .map(|expression| expression_signal_nodes(syntax_tree, expression))
+                    .unwrap_or_else(|| HashSet::from([SignalNode::named(port_name.clone())]));
+                resolved.insert(port_name, signals);
+            }
+            sv_parser::NamedPortConnection::Asterisk(_) => {
+                wildcard = true;
+            }
+        }
+    }
+
+    if wildcard {
+        for port_name in port_order {
+            resolved
+                .entry(port_name.clone())
+                .or_insert_with(|| HashSet::from([SignalNode::named(port_name.clone())]));
+        }
+    }
+
+    resolved
+}
+
+fn ordered_port_connections(
+    syntax_tree: &sv_parser::SyntaxTree,
+    connections: &sv_parser::List<sv_parser::Symbol, sv_parser::OrderedPortConnection>,
+    port_order: &[String],
+) -> HashMap<String, HashSet<SignalNode>> {
+    let mut resolved = HashMap::new();
+
+    for (index, connection) in connections.contents().into_iter().enumerate() {
+        let Some(port_name) = port_order.get(index) else {
+            continue;
+        };
+
+        let signals = connection
+            .nodes
+            .1
+            .as_ref()
+            .map(|expression| expression_signal_nodes(syntax_tree, expression))
+            .unwrap_or_default();
+        resolved.insert(port_name.clone(), signals);
+    }
+
+    resolved
+}
+
+#[allow(clippy::too_many_arguments)]
+fn elaborate_module_instance(
+    module_name: &str,
+    instance_path: &str,
+    parent_path: Option<&str>,
+    instance: Option<&ModuleInstance>,
+    templates: &HashMap<String, ModuleTemplate>,
+    instances_by_module: &HashMap<String, Vec<ModuleInstance>>,
+    next_block_id: &mut u64,
+    blocks: &mut Vec<Block>,
+) -> Result<()> {
+    let Some(template) = templates.get(module_name) else {
+        return Ok(());
+    };
+
+    for block in &template.blocks {
+        if matches!(
+            block.block_type(),
+            BlockType::ModInput | BlockType::ModOutput
+        ) {
+            continue;
+        }
+
+        blocks.push(qualify_block(block, instance_path, next_block_id)?);
+    }
+
+    match (parent_path, instance) {
+        (Some(parent_scope), Some(instance)) => {
+            for block in &template.blocks {
+                if !matches!(
+                    block.block_type(),
+                    BlockType::ModInput | BlockType::ModOutput
+                ) {
+                    continue;
+                }
+
+                if let Some(bridge) =
+                    bridge_port_block(block, parent_scope, instance_path, instance, next_block_id)?
+                {
+                    blocks.push(bridge);
+                }
+            }
+        }
+        _ => {
+            for block in &template.blocks {
+                if !matches!(
+                    block.block_type(),
+                    BlockType::ModInput | BlockType::ModOutput
+                ) {
+                    continue;
+                }
+
+                blocks.push(qualify_block(block, instance_path, next_block_id)?);
+            }
+        }
+    }
+
+    if let Some(instances) = instances_by_module.get(module_name) {
+        for child_instance in instances {
+            let child_path = format!("{instance_path}.{}", child_instance.instance_name);
+            elaborate_module_instance(
+                &child_instance.module_name,
+                &child_path,
+                Some(instance_path),
+                Some(child_instance),
+                templates,
+                instances_by_module,
+                next_block_id,
+                blocks,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn qualify_block(block: &Block, scope: &str, next_block_id: &mut u64) -> Result<Block> {
+    let dataflow = block
+        .dataflow()
+        .iter()
+        .map(|entry| DataflowEntry {
+            output: entry
+                .output
+                .iter()
+                .map(|signal| qualify_signal(signal, scope))
+                .collect(),
+            inputs: entry
+                .inputs
+                .iter()
+                .map(|signal| qualify_signal(signal, scope))
+                .collect(),
+        })
+        .collect();
+
+    Block::new(
+        take_block_id(next_block_id),
+        block.block_type(),
+        block.circuit_type(),
+        scope,
+        block.source_file(),
+        block.line_start(),
+        block.line_end(),
+        dataflow,
+        block.code_snippet(),
+    )
+}
+
+fn bridge_port_block(
+    template_port_block: &Block,
+    parent_scope: &str,
+    child_scope: &str,
+    instance: &ModuleInstance,
+    next_block_id: &mut u64,
+) -> Result<Option<Block>> {
+    let Some(port_name) = port_name_from_block(template_port_block) else {
+        return Ok(None);
+    };
+
+    let connected = instance
+        .connections
+        .get(&port_name)
+        .cloned()
+        .unwrap_or_default();
+    let child_port = qualify_signal(&SignalNode::named(port_name), child_scope);
+    let parent_signals = connected
+        .iter()
+        .map(|signal| qualify_signal(signal, parent_scope))
+        .collect::<HashSet<_>>();
+
+    let dataflow = match template_port_block.block_type() {
+        BlockType::ModInput => vec![DataflowEntry {
+            output: vec![child_port],
+            inputs: parent_signals,
+        }],
+        BlockType::ModOutput => {
+            let mut output = parent_signals
+                .iter()
+                .filter(|signal| signal.is_variable())
+                .cloned()
+                .collect::<Vec<_>>();
+            output.sort_by(|left, right| left.name.cmp(&right.name));
+            vec![DataflowEntry {
+                output,
+                inputs: HashSet::from([child_port]),
+            }]
+        }
+        _ => return Ok(None),
+    };
+
+    Ok(Some(Block::new(
+        take_block_id(next_block_id),
+        template_port_block.block_type(),
+        CircuitType::Combinational,
+        parent_scope,
+        &instance.source_file,
+        instance.line_start,
+        instance.line_end,
+        dataflow,
+        &instance.code_snippet,
+    )?))
+}
+
+fn port_name_from_block(block: &Block) -> Option<String> {
+    let entry = block.dataflow().first()?;
+
+    match block.block_type() {
+        BlockType::ModInput => entry.output.first().map(|signal| signal.name.clone()),
+        BlockType::ModOutput => entry.inputs.iter().next().map(|signal| signal.name.clone()),
+        _ => None,
+    }
+}
+
+fn qualify_signal(signal: &SignalNode, scope: &str) -> SignalNode {
+    if signal.is_literal() || signal.name.starts_with("TOP.") {
+        return signal.clone();
+    }
+
+    SignalNode::variable(format!("{scope}.{}", signal.name), signal.locate)
+}
+
+fn take_block_id(next_block_id: &mut u64) -> BlockId {
+    let block_id = BlockId(*next_block_id);
+    *next_block_id += 1;
+    block_id
 }
 
 #[derive(Default)]

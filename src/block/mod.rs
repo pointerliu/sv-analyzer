@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::ast::ParsedFile;
 use crate::types::{serialize_signal_driver_map, serialize_signal_name_set, BlockId, SignalNode};
 
-pub use dataflow::DataflowBlockizer;
+pub use dataflow::{elaborate_block_set, DataflowBlockizer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum BlockType {
