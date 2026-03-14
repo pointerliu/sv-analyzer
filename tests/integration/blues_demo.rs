@@ -6,7 +6,7 @@ use anyhow::Result;
 use dac26_mcp::block::{Block, BlockSet, BlockType, CircuitType, DataflowEntry};
 use dac26_mcp::coverage::CoverageTracker;
 use dac26_mcp::slicer::{BluesSlicer, SliceRequest};
-use dac26_mcp::types::{BlockId, SignalId, Timestamp};
+use dac26_mcp::types::{BlockId, SignalNode, Timestamp};
 
 #[test]
 fn blues_backtracks_sequential_state_until_coverage_hit_and_respects_min_time() {
@@ -45,7 +45,7 @@ fn blues_backtracks_sequential_state_until_coverage_hit_and_respects_min_time() 
 
     let path = slicer
         .slice(&SliceRequest {
-            signal: SignalId("result".into()),
+            signal: SignalNode::named("result"),
             time: Timestamp(3),
             min_time: Timestamp(1),
         })
@@ -66,7 +66,7 @@ fn blues_backtracks_sequential_state_until_coverage_hit_and_respects_min_time() 
                 edge.from.time.0,
                 edge.to.block_id.0,
                 edge.to.time.0,
-                edge.signal.as_ref().map(|signal| signal.0.as_str()),
+                edge.signal.as_ref().map(|signal| signal.name.as_str()),
             ))
             .collect::<Vec<_>>(),
         vec![(1, 1, 2, 2, Some("tmp")), (2, 2, 2, 3, Some("result"))]
@@ -132,7 +132,7 @@ fn blues_keeps_dependencies_from_distinct_outputs_of_same_block() {
 
     let path = slicer
         .slice(&SliceRequest {
-            signal: SignalId("result".into()),
+            signal: SignalNode::named("result"),
             time: Timestamp(5),
             min_time: Timestamp(0),
         })
@@ -143,12 +143,12 @@ fn blues_keeps_dependencies_from_distinct_outputs_of_same_block() {
     assert!(path.edges.iter().any(|edge| {
         edge.from.block_id.0 == 1
             && edge.to.block_id.0 == 3
-            && edge.signal.as_ref().map(|signal| signal.0.as_str()) == Some("left_src")
+            && edge.signal.as_ref().map(|signal| signal.name.as_str()) == Some("left_src")
     }));
     assert!(path.edges.iter().any(|edge| {
         edge.from.block_id.0 == 2
             && edge.to.block_id.0 == 3
-            && edge.signal.as_ref().map(|signal| signal.0.as_str()) == Some("right_src")
+            && edge.signal.as_ref().map(|signal| signal.name.as_str()) == Some("right_src")
     }));
 }
 
@@ -186,10 +186,10 @@ impl CoverageTracker for FixtureCoverage {
 
 fn entry(output: &str, inputs: &[&str]) -> DataflowEntry {
     DataflowEntry {
-        output: SignalId(output.into()),
+        output: vec![SignalNode::named(output)],
         inputs: inputs
             .iter()
-            .map(|input| SignalId((*input).into()))
+            .map(|input| SignalNode::named(*input))
             .collect::<HashSet<_>>(),
     }
 }

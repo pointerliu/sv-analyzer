@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use std::collections::HashMap;
 
 use crate::types::{
-    BlockId, BlockJson as StableBlockJson, BlockNode, SignalId, StableSliceEdgeJson,
+    BlockId, BlockJson as StableBlockJson, BlockNode, SignalNode, StableSliceEdgeJson,
     StableSliceGraphJson, StableSliceNode, StableSliceNodeJson, Timestamp,
 };
 
@@ -16,7 +16,7 @@ pub use static_slice::StaticSlicer;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SliceRequest {
-    pub signal: SignalId,
+    pub signal: SignalNode,
     pub time: Timestamp,
     pub min_time: Timestamp,
 }
@@ -40,7 +40,7 @@ impl StableSliceNode for StaticBlockNode {
 pub struct SliceEdge<TNode> {
     pub from: TNode,
     pub to: TNode,
-    pub signal: Option<SignalId>,
+    pub signal: Option<SignalNode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

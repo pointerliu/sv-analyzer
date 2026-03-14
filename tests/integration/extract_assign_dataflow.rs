@@ -22,17 +22,43 @@ fn extracts_statement_level_dataflow_from_assignments_and_conditions() {
 
     let actual = collect_entries(&blocks);
     let expected = BTreeSet::from([
-        entry("helper", "Assign", "Combinational", "z", &["x"]),
-        entry("sample", "Assign", "Combinational", "y", &["a", "b"]),
-        entry("sample", "Always", "Combinational", "r", &["next_q", "op"]),
-        entry("sample", "Always", "Combinational", "r", &["d", "op"]),
-        entry("sample", "Always", "Combinational", "r", &["a", "op"]),
-        entry("sample", "Always", "Combinational", "h", &["helper_inst.z"]),
-        entry("sample", "Always", "Combinational", "t", &["a"]),
-        entry("sample", "Always", "Sequential", "q", &["c", "q"]),
-        entry("sample", "Always", "Sequential", "q", &["c", "next_q"]),
-        entry("sample", "Always", "Sequential", "s", &["q"]),
-        entry("sample", "Always", "Sequential", "latch_q", &["a", "sel"]),
+        entry("helper", "Assign", "Combinational", &["z"], &["x"]),
+        entry("sample", "Assign", "Combinational", &["y"], &["a", "b"]),
+        entry(
+            "sample",
+            "Always",
+            "Combinational",
+            &["r"],
+            &["alt_sel", "next_q", "op"],
+        ),
+        entry(
+            "sample",
+            "Always",
+            "Combinational",
+            &["r"],
+            &["alt_sel2", "d", "op"],
+        ),
+        entry("sample", "Always", "Combinational", &["r"], &["a", "op"]),
+        entry(
+            "sample",
+            "Always",
+            "Combinational",
+            &["h"],
+            &["helper_inst.z"],
+        ),
+        entry("sample", "Always", "Combinational", &["p"], &["a", "op"]),
+        entry("sample", "Always", "Combinational", &["t"], &["a"]),
+        entry("sample", "Always", "Combinational", &["temp_init"], &["b"]),
+        entry("sample", "Always", "Sequential", &["q"], &["c", "q"]),
+        entry("sample", "Always", "Sequential", &["q"], &["c", "next_q"]),
+        entry("sample", "Always", "Sequential", &["s"], &["q"]),
+        entry(
+            "sample",
+            "Always",
+            "Sequential",
+            &["latch_q"],
+            &["a", "sel"],
+        ),
     ]);
 
     assert_eq!(actual, expected, "unexpected extracted dataflow set");
@@ -40,9 +66,55 @@ fn extracts_statement_level_dataflow_from_assignments_and_conditions() {
     let _ = fs::remove_file(fixture);
 }
 
+#[test]
+fn keeps_multi_target_assignments_as_one_dataflow_entry_with_list_output() {
+    let fixture = write_fixture(
+        "module sample(input logic c, input logic d, output logic a, output logic b);\n  always_comb begin\n    {a, b} = {c, d};\n  end\nendmodule\n",
+    );
+
+    let parsed = SvParserProvider
+        .parse_files(std::slice::from_ref(&fixture))
+        .unwrap();
+    let blocks = DataflowBlockizer.blockize(&parsed).unwrap();
+
+    let multi_output_entries = blocks
+        .blocks()
+        .iter()
+        .filter(|block| matches!(block.block_type(), BlockType::Always))
+        .flat_map(|block| block.dataflow().iter())
+        .map(|entry| (sorted_outputs(&entry.output), sorted_inputs(&entry.inputs)))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        multi_output_entries,
+        vec![(
+            vec!["a".to_string(), "b".to_string()],
+            vec!["c".to_string(), "d".to_string()],
+        )]
+    );
+
+    let json = serde_json::to_value(&blocks).unwrap();
+    let always_json = json["blocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|block| block["block_type"] == "Always")
+        .unwrap();
+    assert_eq!(
+        sorted_json_signal_names(&always_json["dataflow"][0]["output"]),
+        vec!["a".to_string(), "b".to_string()]
+    );
+    assert_eq!(
+        sorted_json_signal_names(&always_json["dataflow"][0]["inputs"]),
+        vec!["c".to_string(), "d".to_string()]
+    );
+
+    let _ = fs::remove_file(fixture);
+}
+
 fn collect_entries(
     blocks: &dac26_mcp::block::BlockSet,
-) -> BTreeSet<(String, String, String, String, Vec<String>)> {
+) -> BTreeSet<(String, String, String, Vec<String>, Vec<String>)> {
     blocks
         .blocks()
         .iter()
@@ -52,7 +124,7 @@ fn collect_entries(
                 let mut inputs = dataflow
                     .inputs
                     .iter()
-                    .map(|signal| signal.0.clone())
+                    .map(|signal| signal.name.clone())
                     .collect::<Vec<_>>();
                 inputs.sort();
 
@@ -60,7 +132,7 @@ fn collect_entries(
                     block.module_scope().to_string(),
                     format!("{:?}", block.block_type()),
                     format!("{:?}", block.circuit_type()),
-                    dataflow.output.0.clone(),
+                    sorted_outputs(&dataflow.output),
                     inputs,
                 )
             })
@@ -72,9 +144,14 @@ fn entry(
     module_scope: &str,
     block_type: &str,
     circuit_type: &str,
-    output: &str,
+    output: &[&str],
     inputs: &[&str],
-) -> (String, String, String, String, Vec<String>) {
+) -> (String, String, String, Vec<String>, Vec<String>) {
+    let mut output = output
+        .iter()
+        .map(|signal| (*signal).to_string())
+        .collect::<Vec<_>>();
+    output.sort();
     let mut inputs = inputs
         .iter()
         .map(|signal| (*signal).to_string())
@@ -85,9 +162,27 @@ fn entry(
         module_scope.to_string(),
         block_type.to_string(),
         circuit_type.to_string(),
-        output.to_string(),
+        output,
         inputs,
     )
+}
+
+fn sorted_outputs(signals: &[dac26_mcp::types::SignalNode]) -> Vec<String> {
+    let mut outputs = signals
+        .iter()
+        .map(|signal| signal.name.clone())
+        .collect::<Vec<_>>();
+    outputs.sort();
+    outputs
+}
+
+fn sorted_inputs(signals: &std::collections::HashSet<dac26_mcp::types::SignalNode>) -> Vec<String> {
+    let mut inputs = signals
+        .iter()
+        .map(|signal| signal.name.clone())
+        .collect::<Vec<_>>();
+    inputs.sort();
+    inputs
 }
 
 fn write_fixture(contents: &str) -> PathBuf {
@@ -103,4 +198,15 @@ fn write_fixture(contents: &str) -> PathBuf {
 
     fs::write(&path, contents).unwrap();
     path
+}
+
+fn sorted_json_signal_names(value: &serde_json::Value) -> Vec<String> {
+    let mut values = value
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["name"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    values.sort();
+    values
 }

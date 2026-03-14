@@ -55,12 +55,18 @@ impl BlockCollector {
                         let dataflow =
                             extract_continuous_assign_dataflow(&file.syntax_tree, assign.into());
                         if !dataflow.is_empty() {
+                            let line_start = start_line(RefNode::ContinuousAssign(assign.into()));
+                            let line_end = continuous_assign_end_line(assign).unwrap_or(line_start);
+                            let code_snippet =
+                                snippet_from_source(&file.source_text, line_start, line_end);
                             self.push_block(
                                 file,
                                 module_scope,
                                 BlockType::Assign,
                                 CircuitType::Combinational,
-                                assign.into(),
+                                line_start,
+                                line_end,
+                                code_snippet,
                                 dataflow,
                             )?;
                         }
@@ -71,12 +77,18 @@ impl BlockCollector {
                         let (block_type, circuit_type) = classify_always(always_construct);
                         let dataflow = extract_always_dataflow(&file.syntax_tree, always_construct);
                         if !dataflow.is_empty() {
+                            let line_start = start_line(RefNode::AlwaysConstruct(always_construct));
+                            let line_end = always_end_line(always_construct).unwrap_or(line_start);
+                            let code_snippet =
+                                snippet_from_source(&file.source_text, line_start, line_end);
                             self.push_block(
                                 file,
                                 module_scope,
                                 block_type,
                                 circuit_type,
-                                always_construct.into(),
+                                line_start,
+                                line_end,
+                                code_snippet,
                                 dataflow,
                             )?;
                         }
@@ -95,23 +107,21 @@ impl BlockCollector {
         module_scope: &str,
         block_type: BlockType,
         circuit_type: CircuitType,
-        node: RefNode,
+        line_start: usize,
+        line_end: usize,
+        code_snippet: String,
         dataflow: Vec<DataflowEntry>,
     ) -> Result<()> {
-        let line = unwrap_locate!(node)
-            .map(|loc| usize::try_from(loc.line).unwrap_or(1))
-            .unwrap_or(1);
-
         self.blocks.push(Block::new(
             BlockId(self.next_block_id),
             block_type,
             circuit_type,
             module_scope,
             file.path.display().to_string(),
-            line,
-            line,
+            line_start,
+            line_end,
             dataflow,
-            String::new(),
+            code_snippet,
         )?);
         self.next_block_id += 1;
 
@@ -168,11 +178,12 @@ impl BlockCollector {
         block_type: BlockType,
         signal_name: String,
     ) -> Result<()> {
+        let line_start = port_block_details(&file.syntax_tree, &signal_name).unwrap_or(1);
+        let code_snippet = snippet_from_source(&file.source_text, line_start, line_start);
+        let line_end = line_start;
         let dataflow = match block_type {
-            BlockType::ModInput => vec![to_entry(signal_name, HashSet::new())],
-            BlockType::ModOutput => {
-                vec![to_entry(signal_name.clone(), HashSet::from([signal_name]))]
-            }
+            BlockType::ModInput => vec![to_entry(vec![signal_name], HashSet::new())],
+            BlockType::ModOutput => vec![to_entry(Vec::new(), HashSet::from([signal_name]))],
             _ => return Ok(()),
         };
 
@@ -182,10 +193,10 @@ impl BlockCollector {
             CircuitType::Combinational,
             module_scope,
             file.path.display().to_string(),
-            1,
-            1,
+            line_start,
+            line_end,
             dataflow,
-            String::new(),
+            code_snippet,
         )?);
         self.next_block_id += 1;
 
@@ -402,12 +413,9 @@ fn merge_assign_group(mut blocks: Vec<Block>) -> Result<Block> {
         .collect::<Vec<_>>();
     let internal_outputs = raw_entries
         .iter()
-        .map(|entry| entry.output.clone())
+        .flat_map(|entry| entry.output.iter().cloned())
         .collect::<HashSet<_>>();
-    let entry_inputs = raw_entries
-        .iter()
-        .map(|entry| (entry.output.clone(), entry.inputs.clone()))
-        .collect::<HashMap<_, _>>();
+    let entry_inputs = signal_inputs_by_output(&raw_entries);
     let dataflow = raw_entries
         .into_iter()
         .map(|entry| DataflowEntry {
@@ -415,6 +423,12 @@ fn merge_assign_group(mut blocks: Vec<Block>) -> Result<Block> {
             inputs: resolve_external_inputs(&entry.inputs, &internal_outputs, &entry_inputs),
         })
         .collect::<Vec<_>>();
+    let code_snippet = blocks
+        .iter()
+        .map(|block| block.code_snippet().trim())
+        .filter(|snippet| !snippet.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
 
     Block::new(
         first.id(),
@@ -425,15 +439,15 @@ fn merge_assign_group(mut blocks: Vec<Block>) -> Result<Block> {
         line_start,
         line_end,
         dataflow,
-        String::new(),
+        code_snippet,
     )
 }
 
 fn resolve_external_inputs(
-    inputs: &HashSet<crate::types::SignalId>,
-    internal_outputs: &HashSet<crate::types::SignalId>,
-    entry_inputs: &HashMap<crate::types::SignalId, HashSet<crate::types::SignalId>>,
-) -> HashSet<crate::types::SignalId> {
+    inputs: &HashSet<crate::types::SignalNode>,
+    internal_outputs: &HashSet<crate::types::SignalNode>,
+    entry_inputs: &HashMap<crate::types::SignalNode, HashSet<crate::types::SignalNode>>,
+) -> HashSet<crate::types::SignalNode> {
     let mut resolved = HashSet::new();
 
     for input in inputs {
@@ -450,11 +464,11 @@ fn resolve_external_inputs(
 }
 
 fn expand_input(
-    input: &crate::types::SignalId,
-    internal_outputs: &HashSet<crate::types::SignalId>,
-    entry_inputs: &HashMap<crate::types::SignalId, HashSet<crate::types::SignalId>>,
-    visiting: &mut HashSet<crate::types::SignalId>,
-    resolved: &mut HashSet<crate::types::SignalId>,
+    input: &crate::types::SignalNode,
+    internal_outputs: &HashSet<crate::types::SignalNode>,
+    entry_inputs: &HashMap<crate::types::SignalNode, HashSet<crate::types::SignalNode>>,
+    visiting: &mut HashSet<crate::types::SignalNode>,
+    resolved: &mut HashSet<crate::types::SignalNode>,
 ) {
     if !internal_outputs.contains(input) {
         resolved.insert(input.clone());
@@ -605,6 +619,165 @@ fn hierarchical_identifier_text(
         .to_string()
 }
 
+fn locate_from_node(node: RefNode) -> crate::types::SignalLocate {
+    unwrap_locate!(node)
+        .map(|loc| crate::types::SignalLocate {
+            offset: loc.offset,
+            line: usize::try_from(loc.line).unwrap_or(0),
+            len: loc.len,
+        })
+        .unwrap_or_else(|| crate::types::SignalLocate::unknown(0))
+}
+
+fn identifier_signal_node(
+    syntax_tree: &sv_parser::SyntaxTree,
+    node: RefNode,
+) -> crate::types::SignalNode {
+    let name = identifier_text(syntax_tree, node.clone());
+    crate::types::SignalNode::new(name, locate_from_node(node))
+}
+
+fn hierarchical_variable_identifier_signal_node(
+    syntax_tree: &sv_parser::SyntaxTree,
+    node: &sv_parser::HierarchicalVariableIdentifier,
+) -> crate::types::SignalNode {
+    crate::types::SignalNode::new(
+        hierarchical_variable_identifier_text(syntax_tree, node),
+        locate_from_node(node.into()),
+    )
+}
+
+fn ps_or_hierarchical_net_identifier_signal_node(
+    syntax_tree: &sv_parser::SyntaxTree,
+    node: &sv_parser::PsOrHierarchicalNetIdentifier,
+) -> crate::types::SignalNode {
+    crate::types::SignalNode::new(
+        ps_or_hierarchical_net_identifier_text(syntax_tree, node),
+        locate_from_node(node.into()),
+    )
+}
+
+fn hierarchical_identifier_signal_node(
+    syntax_tree: &sv_parser::SyntaxTree,
+    node: &sv_parser::HierarchicalIdentifier,
+) -> crate::types::SignalNode {
+    crate::types::SignalNode::new(
+        hierarchical_identifier_text(syntax_tree, node),
+        locate_from_node(node.into()),
+    )
+}
+
+fn snippet_from_source(source_text: &str, line_start: usize, line_end: usize) -> String {
+    source_text
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            let line_no = index + 1;
+            (line_start <= line_no && line_no <= line_end).then_some(line)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+fn start_line(node: RefNode) -> usize {
+    unwrap_locate!(node)
+        .and_then(|loc| usize::try_from(loc.line).ok())
+        .unwrap_or(1)
+}
+
+fn locate_line(loc: &sv_parser::Locate) -> Option<usize> {
+    usize::try_from(loc.line).ok()
+}
+
+fn keyword_line(keyword: &sv_parser::Keyword) -> Option<usize> {
+    locate_line(&keyword.nodes.0)
+}
+
+fn symbol_line(symbol: &sv_parser::Symbol) -> Option<usize> {
+    locate_line(&symbol.nodes.0)
+}
+
+fn statement_end_line(statement: &sv_parser::Statement) -> Option<usize> {
+    match &statement.nodes.2 {
+        sv_parser::StatementItem::SeqBlock(block) => keyword_line(&block.nodes.4),
+        sv_parser::StatementItem::ProceduralTimingControlStatement(statement) => {
+            statement_or_null_end_line(&statement.nodes.1)
+        }
+        sv_parser::StatementItem::BlockingAssignment(assignment) => symbol_line(&assignment.1),
+        sv_parser::StatementItem::NonblockingAssignment(assignment) => symbol_line(&assignment.1),
+        sv_parser::StatementItem::ConditionalStatement(statement) => {
+            conditional_end_line(statement)
+        }
+        sv_parser::StatementItem::CaseStatement(statement) => case_statement_end_line(statement),
+        _ => unwrap_locate!(statement).and_then(locate_line),
+    }
+}
+
+fn statement_or_null_end_line(statement: &sv_parser::StatementOrNull) -> Option<usize> {
+    match statement {
+        sv_parser::StatementOrNull::Statement(statement) => statement_end_line(statement),
+        sv_parser::StatementOrNull::Attribute(attribute) => symbol_line(&attribute.nodes.1),
+    }
+}
+
+fn conditional_end_line(statement: &sv_parser::ConditionalStatement) -> Option<usize> {
+    if let Some((_, tail)) = &statement.nodes.5 {
+        return statement_or_null_end_line(tail);
+    }
+    if let Some((_, _, _, tail)) = statement.nodes.4.last() {
+        return statement_or_null_end_line(tail);
+    }
+    statement_or_null_end_line(&statement.nodes.3)
+}
+
+fn case_statement_end_line(statement: &sv_parser::CaseStatement) -> Option<usize> {
+    match statement {
+        sv_parser::CaseStatement::Normal(statement) => keyword_line(&statement.nodes.5),
+        _ => unwrap_locate!(statement).and_then(locate_line),
+    }
+}
+
+fn continuous_assign_end_line(assign: &sv_parser::ContinuousAssign) -> Option<usize> {
+    match assign {
+        sv_parser::ContinuousAssign::Net(assign) => symbol_line(&assign.nodes.4),
+        sv_parser::ContinuousAssign::Variable(assign) => symbol_line(&assign.nodes.3),
+    }
+}
+
+fn always_end_line(always_construct: &sv_parser::AlwaysConstruct) -> Option<usize> {
+    statement_end_line(&always_construct.nodes.1)
+}
+
+fn port_block_details(syntax_tree: &sv_parser::SyntaxTree, signal_name: &str) -> Option<usize> {
+    for node in syntax_tree {
+        match node {
+            RefNode::AnsiPortDeclaration(port)
+                if ansi_port_block_data(syntax_tree, port)
+                    .is_some_and(|(_, name)| name == signal_name) =>
+            {
+                return Some(start_line(RefNode::AnsiPortDeclaration(port)));
+            }
+            RefNode::InputDeclaration(port)
+                if nonansi_input_port_block_data(syntax_tree, port)
+                    .is_some_and(|ports| ports.iter().any(|(_, name)| name == signal_name)) =>
+            {
+                return Some(start_line(RefNode::InputDeclaration(port)));
+            }
+            RefNode::OutputDeclaration(port)
+                if nonansi_output_port_block_data(syntax_tree, port)
+                    .is_some_and(|ports| ports.iter().any(|(_, name)| name == signal_name)) =>
+            {
+                return Some(start_line(RefNode::OutputDeclaration(port)));
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
 fn extract_continuous_assign_dataflow(
     syntax_tree: &sv_parser::SyntaxTree,
     node: RefNode,
@@ -652,7 +825,7 @@ fn extract_always_dataflow(
 fn collect_statement_or_null_dataflow(
     syntax_tree: &sv_parser::SyntaxTree,
     statement: &sv_parser::StatementOrNull,
-    conditions: &mut Vec<HashSet<String>>,
+    conditions: &mut Vec<HashSet<crate::types::SignalNode>>,
     dataflow: &mut Vec<DataflowEntry>,
 ) {
     if let sv_parser::StatementOrNull::Statement(statement) = statement {
@@ -663,7 +836,7 @@ fn collect_statement_or_null_dataflow(
 fn collect_statement_dataflow(
     syntax_tree: &sv_parser::SyntaxTree,
     statement: &sv_parser::Statement,
-    conditions: &mut Vec<HashSet<String>>,
+    conditions: &mut Vec<HashSet<crate::types::SignalNode>>,
     dataflow: &mut Vec<DataflowEntry>,
 ) {
     match &statement.nodes.2 {
@@ -686,6 +859,14 @@ fn collect_statement_dataflow(
             collect_case_dataflow(syntax_tree, case_statement, conditions, dataflow);
         }
         sv_parser::StatementItem::SeqBlock(block) => {
+            for declaration in &block.nodes.2 {
+                collect_block_item_declaration_dataflow(
+                    syntax_tree,
+                    declaration,
+                    conditions,
+                    dataflow,
+                );
+            }
             for statement in &block.nodes.3 {
                 collect_statement_or_null_dataflow(syntax_tree, statement, conditions, dataflow);
             }
@@ -702,10 +883,31 @@ fn collect_statement_dataflow(
     }
 }
 
+fn collect_block_item_declaration_dataflow(
+    syntax_tree: &sv_parser::SyntaxTree,
+    declaration: &sv_parser::BlockItemDeclaration,
+    conditions: &[HashSet<crate::types::SignalNode>],
+    dataflow: &mut Vec<DataflowEntry>,
+) {
+    let sv_parser::BlockItemDeclaration::Data(declaration) = declaration else {
+        return;
+    };
+
+    let sv_parser::DataDeclaration::Variable(declaration) = &declaration.nodes.1 else {
+        return;
+    };
+
+    for assignment in declaration.nodes.4.nodes.0.contents() {
+        if let Some(entry) = variable_decl_assignment_entry(syntax_tree, assignment, conditions) {
+            dataflow.push(entry);
+        }
+    }
+}
+
 fn collect_conditional_dataflow(
     syntax_tree: &sv_parser::SyntaxTree,
     conditional: &sv_parser::ConditionalStatement,
-    conditions: &mut Vec<HashSet<String>>,
+    conditions: &mut Vec<HashSet<crate::types::SignalNode>>,
     dataflow: &mut Vec<DataflowEntry>,
 ) {
     let predicate = cond_predicate_signals(syntax_tree, &conditional.nodes.2.nodes.1);
@@ -714,7 +916,7 @@ fn collect_conditional_dataflow(
     collect_statement_or_null_dataflow(syntax_tree, &conditional.nodes.3, conditions, dataflow);
     conditions.pop();
 
-    let mut prior_else_if_predicates: Vec<HashSet<String>> = Vec::new();
+    let mut prior_else_if_predicates: Vec<HashSet<crate::types::SignalNode>> = Vec::new();
 
     for (_, _, predicate_group, statement) in &conditional.nodes.4 {
         conditions.push(predicate.clone());
@@ -750,11 +952,12 @@ fn collect_conditional_dataflow(
 fn collect_case_dataflow(
     syntax_tree: &sv_parser::SyntaxTree,
     case_statement: &sv_parser::CaseStatement,
-    conditions: &mut Vec<HashSet<String>>,
+    conditions: &mut Vec<HashSet<crate::types::SignalNode>>,
     dataflow: &mut Vec<DataflowEntry>,
 ) {
     if let sv_parser::CaseStatement::Normal(case_statement) = case_statement {
-        let selector = expression_signals(syntax_tree, &case_statement.nodes.2.nodes.1.nodes.0);
+        let selector =
+            expression_signal_nodes(syntax_tree, &case_statement.nodes.2.nodes.1.nodes.0);
 
         collect_case_item_dataflow(
             syntax_tree,
@@ -772,13 +975,17 @@ fn collect_case_dataflow(
 fn collect_case_item_dataflow(
     syntax_tree: &sv_parser::SyntaxTree,
     item: &sv_parser::CaseItem,
-    selector: &HashSet<String>,
-    conditions: &mut Vec<HashSet<String>>,
+    selector: &HashSet<crate::types::SignalNode>,
+    conditions: &mut Vec<HashSet<crate::types::SignalNode>>,
     dataflow: &mut Vec<DataflowEntry>,
 ) {
     match item {
         sv_parser::CaseItem::NonDefault(item) => {
-            conditions.push(selector.clone());
+            let mut case_condition = selector.clone();
+            for expression in item.nodes.0.contents() {
+                case_condition.extend(expression_signal_nodes(syntax_tree, &expression.nodes.0));
+            }
+            conditions.push(case_condition);
             collect_statement_or_null_dataflow(syntax_tree, &item.nodes.2, conditions, dataflow);
             conditions.pop();
         }
@@ -793,15 +1000,15 @@ fn collect_case_item_dataflow(
 fn cond_predicate_signals(
     syntax_tree: &sv_parser::SyntaxTree,
     predicate: &sv_parser::CondPredicate,
-) -> HashSet<String> {
+) -> HashSet<crate::types::SignalNode> {
     let mut signals = HashSet::new();
     for item in predicate.nodes.0.contents() {
         match item {
             sv_parser::ExpressionOrCondPattern::Expression(expr) => {
-                signals.extend(expression_signals(syntax_tree, expr));
+                signals.extend(expression_signal_nodes(syntax_tree, expr));
             }
             sv_parser::ExpressionOrCondPattern::CondPattern(pattern) => {
-                signals.extend(expression_signals(syntax_tree, &pattern.nodes.0));
+                signals.extend(expression_signal_nodes(syntax_tree, &pattern.nodes.0));
             }
         }
     }
@@ -811,7 +1018,7 @@ fn cond_predicate_signals(
 fn blocking_assignment_entry(
     syntax_tree: &sv_parser::SyntaxTree,
     assignment: &sv_parser::BlockingAssignment,
-    conditions: &[HashSet<String>],
+    conditions: &[HashSet<crate::types::SignalNode>],
 ) -> Option<DataflowEntry> {
     match assignment {
         sv_parser::BlockingAssignment::Variable(assign) => entry_from_variable_lvalue_and_expr(
@@ -838,7 +1045,7 @@ fn blocking_assignment_entry(
 fn nonblocking_assignment_entry(
     syntax_tree: &sv_parser::SyntaxTree,
     assignment: &sv_parser::NonblockingAssignment,
-    conditions: &[HashSet<String>],
+    conditions: &[HashSet<crate::types::SignalNode>],
 ) -> Option<DataflowEntry> {
     entry_from_variable_lvalue_and_expr(
         syntax_tree,
@@ -851,7 +1058,7 @@ fn nonblocking_assignment_entry(
 fn variable_assignment_entry(
     syntax_tree: &sv_parser::SyntaxTree,
     assignment: &sv_parser::VariableAssignment,
-    conditions: &[HashSet<String>],
+    conditions: &[HashSet<crate::types::SignalNode>],
 ) -> Option<DataflowEntry> {
     entry_from_variable_lvalue_and_expr(
         syntax_tree,
@@ -859,6 +1066,26 @@ fn variable_assignment_entry(
         &assignment.nodes.2,
         conditions,
     )
+}
+
+fn variable_decl_assignment_entry(
+    syntax_tree: &sv_parser::SyntaxTree,
+    assignment: &sv_parser::VariableDeclAssignment,
+    conditions: &[HashSet<crate::types::SignalNode>],
+) -> Option<DataflowEntry> {
+    let sv_parser::VariableDeclAssignment::Variable(assignment) = assignment else {
+        return None;
+    };
+    let (_, expression) = assignment.nodes.2.as_ref()?;
+
+    let output = vec![identifier_signal_node(
+        syntax_tree,
+        (&assignment.nodes.0).into(),
+    )];
+    let mut inputs = expression_signal_nodes(syntax_tree, expression);
+    extend_condition_inputs(&mut inputs, conditions);
+
+    Some(DataflowEntry { output, inputs })
 }
 
 fn net_assignment_entry(
@@ -872,85 +1099,155 @@ fn entry_from_variable_lvalue_and_expr(
     syntax_tree: &sv_parser::SyntaxTree,
     lvalue: &sv_parser::VariableLvalue,
     expression: &sv_parser::Expression,
-    conditions: &[HashSet<String>],
+    conditions: &[HashSet<crate::types::SignalNode>],
 ) -> Option<DataflowEntry> {
-    let output = variable_lvalue_name(syntax_tree, lvalue)?;
-    let mut inputs = expression_signals(syntax_tree, expression);
+    let output = variable_lvalue_nodes(syntax_tree, lvalue);
+    if output.is_empty() {
+        return None;
+    }
+    let mut inputs = expression_signal_nodes(syntax_tree, expression);
     extend_condition_inputs(&mut inputs, conditions);
-    Some(to_entry(output, inputs))
+    Some(DataflowEntry { output, inputs })
 }
 
 fn entry_from_net_lvalue_and_expr(
     syntax_tree: &sv_parser::SyntaxTree,
     lvalue: &sv_parser::NetLvalue,
     expression: &sv_parser::Expression,
-    conditions: &[HashSet<String>],
+    conditions: &[HashSet<crate::types::SignalNode>],
 ) -> Option<DataflowEntry> {
-    let output = net_lvalue_name(syntax_tree, lvalue)?;
-    let mut inputs = expression_signals(syntax_tree, expression);
+    let output = net_lvalue_nodes(syntax_tree, lvalue);
+    if output.is_empty() {
+        return None;
+    }
+    let mut inputs = expression_signal_nodes(syntax_tree, expression);
     extend_condition_inputs(&mut inputs, conditions);
-    Some(to_entry(output, inputs))
+    Some(DataflowEntry { output, inputs })
 }
 
-fn extend_condition_inputs(inputs: &mut HashSet<String>, conditions: &[HashSet<String>]) {
+fn extend_condition_inputs(
+    inputs: &mut HashSet<crate::types::SignalNode>,
+    conditions: &[HashSet<crate::types::SignalNode>],
+) {
     for condition in conditions {
         inputs.extend(condition.iter().cloned());
     }
 }
 
-fn variable_lvalue_name(
+fn variable_lvalue_nodes(
     syntax_tree: &sv_parser::SyntaxTree,
     lvalue: &sv_parser::VariableLvalue,
-) -> Option<String> {
+) -> Vec<crate::types::SignalNode> {
     match lvalue {
         sv_parser::VariableLvalue::Identifier(identifier) => {
-            Some(identifier_text(syntax_tree, (&identifier.nodes.1).into()))
+            vec![hierarchical_variable_identifier_signal_node(
+                syntax_tree,
+                &identifier.nodes.1,
+            )]
         }
-        _ => None,
+        sv_parser::VariableLvalue::Lvalue(lvalues) => lvalues
+            .nodes
+            .0
+            .nodes
+            .1
+            .contents()
+            .into_iter()
+            .flat_map(|child| variable_lvalue_nodes(syntax_tree, child))
+            .collect(),
+        _ => Vec::new(),
     }
 }
 
-fn net_lvalue_name(
+fn net_lvalue_nodes(
     syntax_tree: &sv_parser::SyntaxTree,
     lvalue: &sv_parser::NetLvalue,
-) -> Option<String> {
+) -> Vec<crate::types::SignalNode> {
     match lvalue {
         sv_parser::NetLvalue::Identifier(identifier) => {
-            Some(identifier_text(syntax_tree, (&identifier.nodes.0).into()))
+            vec![ps_or_hierarchical_net_identifier_signal_node(
+                syntax_tree,
+                &identifier.nodes.0,
+            )]
         }
-        _ => None,
+        sv_parser::NetLvalue::Lvalue(lvalues) => lvalues
+            .nodes
+            .0
+            .nodes
+            .1
+            .contents()
+            .into_iter()
+            .flat_map(|child| net_lvalue_nodes(syntax_tree, child))
+            .collect(),
+        _ => Vec::new(),
     }
 }
 
-fn expression_signals(
-    syntax_tree: &sv_parser::SyntaxTree,
-    expression: &sv_parser::Expression,
-) -> HashSet<String> {
-    signals_from_node_text(syntax_tree, expression.into())
+fn to_entry(outputs: Vec<String>, inputs: HashSet<String>) -> DataflowEntry {
+    DataflowEntry {
+        output: outputs
+            .into_iter()
+            .map(crate::types::SignalNode::named)
+            .collect(),
+        inputs: inputs
+            .into_iter()
+            .map(crate::types::SignalNode::named)
+            .collect(),
+    }
 }
 
-fn signals_from_node_text(syntax_tree: &sv_parser::SyntaxTree, node: RefNode) -> HashSet<String> {
+fn signal_inputs_by_output(
+    entries: &[DataflowEntry],
+) -> HashMap<crate::types::SignalNode, HashSet<crate::types::SignalNode>> {
+    let mut map = HashMap::new();
+    for entry in entries {
+        for output in &entry.output {
+            map.insert(output.clone(), entry.inputs.clone());
+        }
+    }
+    map
+}
+
+fn expression_signal_nodes(
+    syntax_tree: &sv_parser::SyntaxTree,
+    expression: &sv_parser::Expression,
+) -> HashSet<crate::types::SignalNode> {
+    signal_nodes_from_node_text(syntax_tree, expression.into())
+}
+
+fn signal_nodes_from_node_text(
+    syntax_tree: &sv_parser::SyntaxTree,
+    node: RefNode,
+) -> HashSet<crate::types::SignalNode> {
     let mut names = HashSet::new();
 
     for child in node.into_iter() {
         match child {
             RefNode::PrimaryHierarchical(primary) => {
-                names.insert(hierarchical_identifier_text(syntax_tree, &primary.nodes.1));
+                names.insert(hierarchical_identifier_signal_node(
+                    syntax_tree,
+                    &primary.nodes.1,
+                ));
             }
             RefNode::HierarchicalVariableIdentifier(id) => {
-                names.insert(hierarchical_variable_identifier_text(syntax_tree, id));
+                names.insert(hierarchical_variable_identifier_signal_node(
+                    syntax_tree,
+                    id,
+                ));
             }
             RefNode::PsOrHierarchicalNetIdentifier(id) => {
-                names.insert(ps_or_hierarchical_net_identifier_text(syntax_tree, id));
+                names.insert(ps_or_hierarchical_net_identifier_signal_node(
+                    syntax_tree,
+                    id,
+                ));
             }
             RefNode::PortIdentifier(id) => {
-                names.insert(identifier_text(syntax_tree, id.into()));
+                names.insert(identifier_signal_node(syntax_tree, id.into()));
             }
             _ => {}
         }
     }
 
-    names.retain(|name| is_signal_name(name));
+    names.retain(|name| is_signal_name(name.as_str()));
     names
 }
 
@@ -989,11 +1286,4 @@ fn is_signal_name(name: &str) -> bool {
     name.chars()
         .next()
         .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_')
-}
-
-fn to_entry(output: String, inputs: HashSet<String>) -> DataflowEntry {
-    DataflowEntry {
-        output: crate::types::SignalId(output),
-        inputs: inputs.into_iter().map(crate::types::SignalId).collect(),
-    }
 }

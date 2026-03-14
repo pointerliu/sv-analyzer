@@ -2,7 +2,7 @@ pub mod wellen;
 
 use anyhow::Result;
 
-use crate::types::{SignalId, Timestamp};
+use crate::types::{SignalNode, Timestamp};
 
 pub use self::wellen::WellenReader;
 
@@ -13,5 +13,5 @@ pub struct SignalValue {
 }
 
 pub trait WaveformReader {
-    fn signal_value_at(&self, signal: &SignalId, time: Timestamp) -> Result<Option<SignalValue>>;
+    fn signal_value_at(&self, signal: &SignalNode, time: Timestamp) -> Result<Option<SignalValue>>;
 }

@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dac26_mcp::types::{SignalId, Timestamp};
+use dac26_mcp::types::{SignalNode, Timestamp};
 use dac26_mcp::wave::{WaveformReader, WellenReader};
 
 fn demo_vcd_path() -> PathBuf {
@@ -127,11 +127,11 @@ fn reads_signal_value_from_demo_vcd_by_hierarchical_name() {
     let wave = WellenReader::open(demo_vcd_path()).unwrap();
 
     let full_name_value = wave
-        .signal_value_at(&SignalId("TOP.tb.dut.tmp".into()), Timestamp(35))
+        .signal_value_at(&SignalNode::named("TOP.tb.dut.tmp"), Timestamp(35))
         .unwrap()
         .unwrap();
     let normalized_value = wave
-        .signal_value_at(&SignalId("tb.dut.tmp".into()), Timestamp(35))
+        .signal_value_at(&SignalNode::named("tb.dut.tmp"), Timestamp(35))
         .unwrap()
         .unwrap();
 
@@ -146,15 +146,15 @@ fn rejects_ambiguous_single_root_aliases() {
     let wave = WellenReader::open(&path).unwrap();
 
     let exact_a = wave
-        .signal_value_at(&SignalId("root_a.leaf.sig".into()), Timestamp(0))
+        .signal_value_at(&SignalNode::named("root_a.leaf.sig"), Timestamp(0))
         .unwrap()
         .unwrap();
     let exact_b = wave
-        .signal_value_at(&SignalId("root_b.leaf.sig".into()), Timestamp(0))
+        .signal_value_at(&SignalNode::named("root_b.leaf.sig"), Timestamp(0))
         .unwrap()
         .unwrap();
     let ambiguous = wave
-        .signal_value_at(&SignalId("leaf.sig".into()), Timestamp(0))
+        .signal_value_at(&SignalNode::named("leaf.sig"), Timestamp(0))
         .unwrap();
 
     assert_eq!(exact_a.raw_bits, "1");
@@ -170,11 +170,11 @@ fn exact_full_name_wins_over_conflicting_alias() {
     let wave = WellenReader::open(&path).unwrap();
 
     let exact = wave
-        .signal_value_at(&SignalId("leaf.sig".into()), Timestamp(0))
+        .signal_value_at(&SignalNode::named("leaf.sig"), Timestamp(0))
         .unwrap()
         .unwrap();
     let alias_source = wave
-        .signal_value_at(&SignalId("root.leaf.sig".into()), Timestamp(0))
+        .signal_value_at(&SignalNode::named("root.leaf.sig"), Timestamp(0))
         .unwrap()
         .unwrap();
 
@@ -205,7 +205,7 @@ b{wide_bits} !\n"
     let wave = WellenReader::open(&path).unwrap();
 
     let value = wave
-        .signal_value_at(&SignalId("tb.wide".into()), Timestamp(0))
+        .signal_value_at(&SignalNode::named("tb.wide"), Timestamp(0))
         .unwrap()
         .unwrap();
     let expected_hex = format!("0x{}", "f".repeat(33));

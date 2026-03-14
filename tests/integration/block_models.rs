@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use dac26_mcp::block::{Block, BlockSet, BlockType, CircuitType, DataflowEntry};
-use dac26_mcp::types::{BlockId, SignalId};
+use dac26_mcp::types::{BlockId, SignalNode};
 
 #[test]
 fn block_new_derives_signal_sets_from_dataflow() {
@@ -14,16 +14,16 @@ fn block_new_derives_signal_sets_from_dataflow() {
         60,
         62,
         vec![DataflowEntry {
-            output: SignalId("tmp".into()),
-            inputs: HashSet::from([SignalId("a".into()), SignalId("b".into())]),
+            output: vec![SignalNode::named("tmp")],
+            inputs: HashSet::from([SignalNode::named("a"), SignalNode::named("b")]),
         }],
         "tmp = a + b;",
     )
     .unwrap();
 
     assert_eq!(block.output_signals().len(), 1);
-    assert!(block.output_signals().contains(&SignalId("tmp".into())));
-    assert!(block.input_signals().contains(&SignalId("a".into())));
+    assert!(block.output_signals().contains(&SignalNode::named("tmp")));
+    assert!(block.input_signals().contains(&SignalNode::named("a")));
     assert_eq!(block.dataflow().len(), 1);
 }
 
@@ -37,11 +37,11 @@ fn block_new_rejects_mismatched_signal_sets() {
         "design.sv",
         60,
         62,
-        HashSet::from([SignalId("a".into())]),
-        HashSet::from([SignalId("other".into())]),
+        HashSet::from([SignalNode::named("a")]),
+        HashSet::from([SignalNode::named("other")]),
         vec![DataflowEntry {
-            output: SignalId("tmp".into()),
-            inputs: HashSet::from([SignalId("a".into())]),
+            output: vec![SignalNode::named("tmp")],
+            inputs: HashSet::from([SignalNode::named("a")]),
         }],
         "tmp = a;",
     );
@@ -60,8 +60,8 @@ fn block_set_tracks_signal_drivers_via_accessor() {
         10,
         10,
         vec![DataflowEntry {
-            output: SignalId("sum".into()),
-            inputs: HashSet::from([SignalId("a".into())]),
+            output: vec![SignalNode::named("sum")],
+            inputs: HashSet::from([SignalNode::named("a")]),
         }],
         "assign sum = a;",
     )
@@ -71,10 +71,10 @@ fn block_set_tracks_signal_drivers_via_accessor() {
 
     assert_eq!(block_set.blocks(), &[driver]);
     assert_eq!(
-        block_set.drivers_for(&SignalId("sum".into())),
+        block_set.drivers_for(&SignalNode::named("sum")),
         &[BlockId(7)]
     );
-    assert_eq!(block_set.drivers_for(&SignalId("missing".into())), &[]);
+    assert_eq!(block_set.drivers_for(&SignalNode::named("missing")), &[]);
 }
 
 #[test]
@@ -88,8 +88,8 @@ fn block_set_captures_multiple_drivers_without_exposing_index_mutation() {
         10,
         10,
         vec![DataflowEntry {
-            output: SignalId("sum".into()),
-            inputs: HashSet::from([SignalId("a".into())]),
+            output: vec![SignalNode::named("sum")],
+            inputs: HashSet::from([SignalNode::named("a")]),
         }],
         "assign sum = a;",
     )
@@ -103,8 +103,8 @@ fn block_set_captures_multiple_drivers_without_exposing_index_mutation() {
         11,
         12,
         vec![DataflowEntry {
-            output: SignalId("sum".into()),
-            inputs: HashSet::from([SignalId("b".into())]),
+            output: vec![SignalNode::named("sum")],
+            inputs: HashSet::from([SignalNode::named("b")]),
         }],
         "always_ff @(posedge clk) sum <= b;",
     )
@@ -113,7 +113,7 @@ fn block_set_captures_multiple_drivers_without_exposing_index_mutation() {
     let block_set = BlockSet::new(vec![left_driver, right_driver]).unwrap();
 
     assert_eq!(
-        block_set.drivers_for(&SignalId("sum".into())),
+        block_set.drivers_for(&SignalNode::named("sum")),
         &[BlockId(7), BlockId(8)]
     );
     assert_eq!(block_set.blocks().len(), 2);
@@ -130,8 +130,8 @@ fn block_set_rejects_duplicate_block_ids() {
         10,
         10,
         vec![DataflowEntry {
-            output: SignalId("sum".into()),
-            inputs: HashSet::from([SignalId("a".into())]),
+            output: vec![SignalNode::named("sum")],
+            inputs: HashSet::from([SignalNode::named("a")]),
         }],
         "assign sum = a;",
     )
@@ -145,8 +145,8 @@ fn block_set_rejects_duplicate_block_ids() {
         11,
         12,
         vec![DataflowEntry {
-            output: SignalId("sum".into()),
-            inputs: HashSet::from([SignalId("b".into())]),
+            output: vec![SignalNode::named("sum")],
+            inputs: HashSet::from([SignalNode::named("b")]),
         }],
         "always_ff @(posedge clk) sum <= b;",
     )

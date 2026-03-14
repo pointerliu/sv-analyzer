@@ -6,7 +6,7 @@ use crate::block::{Block, BlockSet};
 use crate::slicer::{
     SliceRequest, StaticBlockEdge, StaticBlockJson, StaticBlockNode, StaticSliceGraph,
 };
-use crate::types::{BlockId, SignalId};
+use crate::types::{BlockId, SignalNode};
 
 #[derive(Debug, Clone)]
 pub struct StaticSlicer {
@@ -71,7 +71,7 @@ impl StaticSlicer {
 
         let mut edge_keys = edge_keys.into_iter().collect::<Vec<_>>();
         edge_keys.sort_by(|left, right| {
-            (left.0, left.1, left.2 .0.as_str()).cmp(&(right.0, right.1, right.2 .0.as_str()))
+            (left.0, left.1, left.2.as_str()).cmp(&(right.0, right.1, right.2.as_str()))
         });
 
         Ok(StaticSliceGraph {
@@ -106,11 +106,11 @@ impl StaticSlicer {
     }
 }
 
-fn inputs_for_output(block: &Block, output: &SignalId) -> Vec<SignalId> {
+fn inputs_for_output(block: &Block, output: &SignalNode) -> Vec<SignalNode> {
     block
         .dataflow()
         .iter()
-        .filter(move |entry| &entry.output == output)
+        .filter(move |entry| entry.output.contains(output))
         .flat_map(|entry| entry.inputs.iter().cloned())
         .collect()
 }

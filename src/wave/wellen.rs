@@ -5,7 +5,7 @@ use anyhow::{anyhow, Context, Result};
 use wellen::simple::{self, Waveform};
 use wellen::{Hierarchy, SignalRef, SignalValue as WellenSignalValue};
 
-use crate::types::{SignalId, Timestamp};
+use crate::types::{SignalNode, Timestamp};
 use crate::wave::{SignalValue, WaveformReader};
 
 #[derive(Debug)]
@@ -34,12 +34,12 @@ impl WellenReader {
 }
 
 impl WaveformReader for WellenReader {
-    fn signal_value_at(&self, signal: &SignalId, time: Timestamp) -> Result<Option<SignalValue>> {
+    fn signal_value_at(&self, signal: &SignalNode, time: Timestamp) -> Result<Option<SignalValue>> {
         if time.0 < 0 {
             return Ok(None);
         }
 
-        let signal_ref = match self.signal_lookup.get(&signal.0) {
+        let signal_ref = match self.signal_lookup.get(signal.as_str()) {
             Some(Some(signal_ref)) => *signal_ref,
             Some(None) => return Ok(None),
             None => return Ok(None),
@@ -48,7 +48,7 @@ impl WaveformReader for WellenReader {
         let waveform_signal = self
             .waveform
             .get_signal(signal_ref)
-            .ok_or_else(|| anyhow!("signal data not loaded for {}", signal.0))?;
+            .ok_or_else(|| anyhow!("signal data not loaded for {}", signal.as_str()))?;
 
         let time_idx = match self.time_table.binary_search(&(time.0 as u64)) {
             Ok(index) => index,

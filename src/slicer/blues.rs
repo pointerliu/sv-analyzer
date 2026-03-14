@@ -6,10 +6,10 @@ use anyhow::Result;
 use crate::block::{Block, BlockSet, CircuitType};
 use crate::coverage::CoverageTracker;
 use crate::slicer::{BlockEdgeJson, BlockJson, InstructionExecutionPath, SliceRequest, Slicer};
-use crate::types::{BlockId, BlockNode, SignalId, Timestamp};
+use crate::types::{BlockId, BlockNode, SignalNode, Timestamp};
 
 type TimedBlockKey = (BlockId, i64);
-type TimedEdgeKey = (TimedBlockKey, TimedBlockKey, Option<SignalId>);
+type TimedEdgeKey = (TimedBlockKey, TimedBlockKey, Option<SignalNode>);
 
 struct SliceAccum<'a> {
     node_keys: &'a mut HashSet<TimedBlockKey>,
@@ -144,14 +144,14 @@ impl BluesSlicer {
                 left.0 .0 .0,
                 left.1 .1,
                 left.1 .0 .0,
-                left.2.as_ref().map(|signal| signal.0.as_str()),
+                left.2.as_ref().map(|signal| signal.as_str()),
             )
                 .cmp(&(
                     right.0 .1,
                     right.0 .0 .0,
                     right.1 .1,
                     right.1 .0 .0,
-                    right.2.as_ref().map(|signal| signal.0.as_str()),
+                    right.2.as_ref().map(|signal| signal.as_str()),
                 ))
         });
 
@@ -203,7 +203,7 @@ fn add_upstream_edges(
     block_set: &BlockSet,
     blocks_by_id: &HashMap<BlockId, Block>,
     accum: &mut SliceAccum<'_>,
-    signal: &SignalId,
+    signal: &SignalNode,
     source_time: Timestamp,
     sink_block_id: BlockId,
     sink_time: Timestamp,
@@ -224,11 +224,11 @@ fn add_upstream_edges(
     }
 }
 
-fn inputs_for_output(block: &Block, output: &SignalId) -> Vec<SignalId> {
+fn inputs_for_output(block: &Block, output: &SignalNode) -> Vec<SignalNode> {
     block
         .dataflow()
         .iter()
-        .filter(|entry| &entry.output == output)
+        .filter(|entry| entry.output.contains(output))
         .flat_map(|entry| entry.inputs.iter().cloned())
         .collect()
 }

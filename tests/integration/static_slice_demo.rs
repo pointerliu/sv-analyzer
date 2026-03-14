@@ -4,7 +4,7 @@ use dac26_mcp::block::{Block, BlockSet, BlockType, CircuitType, DataflowEntry};
 use dac26_mcp::slicer::{
     InstructionExecutionPath, SliceGraph, SliceRequest, StaticBlockNode, StaticSlicer,
 };
-use dac26_mcp::types::{BlockId, BlockNode, SignalId, Timestamp};
+use dac26_mcp::types::{BlockId, BlockNode, SignalNode, Timestamp};
 
 #[test]
 fn instruction_execution_path_uses_shared_graph_container() {
@@ -31,7 +31,7 @@ fn static_slice_returns_timeless_graph_for_transitive_dependencies() {
             "design.sv",
             10,
             10,
-            vec![entry("tmp", &["a", "b"])],
+            vec![entry(&["tmp"], &["a", "b"])],
             "assign tmp = a & b;",
         )
         .unwrap(),
@@ -43,7 +43,7 @@ fn static_slice_returns_timeless_graph_for_transitive_dependencies() {
             "design.sv",
             12,
             14,
-            vec![entry("result", &["tmp", "c"])],
+            vec![entry(&["result"], &["tmp", "c"])],
             "always_ff @(posedge clk) result <= tmp ^ c;",
         )
         .unwrap(),
@@ -53,10 +53,10 @@ fn static_slice_returns_timeless_graph_for_transitive_dependencies() {
             CircuitType::Combinational,
             "demo",
             "design.sv",
-            1,
-            1,
-            vec![entry("result", &["result"])],
-            "output result",
+            20,
+            20,
+            vec![entry(&["sink_result"], &["result"])],
+            "output result;",
         )
         .unwrap(),
     ])
@@ -64,7 +64,7 @@ fn static_slice_returns_timeless_graph_for_transitive_dependencies() {
 
     let graph: SliceGraph<StaticBlockNode> = StaticSlicer::new(block_set)
         .slice(&SliceRequest {
-            signal: SignalId("result".into()),
+            signal: SignalNode::named("sink_result"),
             time: Timestamp(20),
             min_time: Timestamp(-5),
         })
@@ -86,7 +86,7 @@ fn static_slice_returns_timeless_graph_for_transitive_dependencies() {
                 (
                     edge.from.block_id.0,
                     edge.to.block_id.0,
-                    edge.signal.as_ref().map(|signal| signal.0.as_str()),
+                    edge.signal.as_ref().map(|signal| signal.name.as_str()),
                 )
             })
             .collect::<Vec<_>>(),
@@ -108,12 +108,15 @@ fn static_slice_returns_timeless_graph_for_transitive_dependencies() {
     );
 }
 
-fn entry(output: &str, inputs: &[&str]) -> DataflowEntry {
+fn entry(outputs: &[&str], inputs: &[&str]) -> DataflowEntry {
     DataflowEntry {
-        output: SignalId(output.into()),
+        output: outputs
+            .iter()
+            .map(|output| SignalNode::named(*output))
+            .collect::<Vec<_>>(),
         inputs: inputs
             .iter()
-            .map(|input| SignalId((*input).into()))
+            .map(|input| SignalNode::named(*input))
             .collect::<HashSet<_>>(),
     }
 }

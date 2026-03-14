@@ -6,7 +6,7 @@ use dac26_mcp::ast::{AstProvider, SvParserProvider};
 use dac26_mcp::block::{Blockizer, DataflowBlockizer};
 use dac26_mcp::coverage::{CoverageTracker, VcdCoverageTracker};
 use dac26_mcp::slicer::{BluesSlicer, SliceRequest, StaticSlicer};
-use dac26_mcp::types::{SignalId, Timestamp};
+use dac26_mcp::types::{SignalNode, Timestamp};
 use dac26_mcp::wave::{WaveformReader, WellenReader};
 use serde::Serialize;
 use std::sync::Arc;
@@ -146,7 +146,7 @@ fn run_slice(args: SliceArgs) -> Result<()> {
         let parsed_files = SvParserProvider.parse_files(&args.sv_files)?;
         let block_set = DataflowBlockizer.blockize(&parsed_files)?;
         let request = SliceRequest {
-            signal: SignalId(args.signal),
+            signal: SignalNode::named(args.signal),
             time: Timestamp(0),
             min_time: Timestamp(0),
         };
@@ -173,7 +173,7 @@ fn run_slice(args: SliceArgs) -> Result<()> {
     let _waveform_reader = WellenReader::open(vcd)?;
     let coverage = Arc::new(VcdCoverageTracker::open(vcd)?);
     let request = SliceRequest {
-        signal: SignalId(args.signal),
+        signal: SignalNode::named(args.signal),
         time: Timestamp(time),
         min_time: Timestamp(min_time),
     };
@@ -188,7 +188,7 @@ fn run_slice(args: SliceArgs) -> Result<()> {
 
 fn run_wave(args: WaveArgs) -> Result<()> {
     let reader = WellenReader::open(&args.vcd)?;
-    let signal = SignalId(args.signal.clone());
+    let signal = SignalNode::named(args.signal.clone());
     let value = reader.signal_value_at(&signal, Timestamp(args.time))?;
     let output = WaveOutput {
         signal: args.signal,

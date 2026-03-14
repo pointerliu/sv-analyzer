@@ -1,7 +1,7 @@
 use dac26_mcp::slicer::{
     InstructionExecutionPath, SliceBlock, SliceEdge, SliceGraph, StaticBlockNode,
 };
-use dac26_mcp::types::{BlockId, BlockNode, SignalId, Timestamp};
+use dac26_mcp::types::{BlockId, BlockNode, SignalNode, Timestamp};
 use serde_json::json;
 
 #[test]
@@ -26,7 +26,7 @@ fn instruction_execution_path_serializes_as_stable_json_graph() {
                 block_id: BlockId(17),
                 time: Timestamp(19),
             },
-            signal: Some(SignalId("result".into())),
+            signal: Some(SignalNode::named("result")),
         }],
         blocks: vec![SliceBlock {
             id: BlockId(17),
@@ -56,7 +56,14 @@ fn instruction_execution_path_serializes_as_stable_json_graph() {
                 {
                     "from": 1,
                     "to": 0,
-                    "signal": "result"
+                    "signal": {
+                        "name": "result",
+                        "locate": {
+                            "offset": 0,
+                            "line": 0,
+                            "len": 6
+                        }
+                    }
                 }
             ],
             "blocks": [

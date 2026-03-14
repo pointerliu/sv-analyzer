@@ -1,5 +1,5 @@
 use dac26_mcp::types::{
-    BlockEdgeJson, BlockId, BlockJson, BlockNode, SignalId, Timestamp, TraceGraphJson,
+    BlockEdgeJson, BlockId, BlockJson, BlockNode, SignalNode, Timestamp, TraceGraphJson,
 };
 use serde_json::json;
 
@@ -18,7 +18,7 @@ fn block_node_and_graph_dtos_serialize_as_expected() {
                 block_id: BlockId(3),
                 time: Timestamp(18),
             },
-            signal: Some(SignalId("result".into())),
+            signal: Some(SignalNode::named("result")),
         }],
         blocks: vec![BlockJson {
             id: BlockId(7),
@@ -48,7 +48,14 @@ fn block_node_and_graph_dtos_serialize_as_expected() {
                         "block_id": 3,
                         "time": 18
                     },
-                    "signal": "result"
+                    "signal": {
+                        "name": "result",
+                        "locate": {
+                            "offset": 0,
+                            "line": 0,
+                            "len": 6
+                        }
+                    }
                 }
             ],
             "blocks": [

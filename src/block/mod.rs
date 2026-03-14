@@ -6,7 +6,7 @@ use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::ast::ParsedFile;
-use crate::types::{BlockId, SignalId};
+use crate::types::{serialize_signal_driver_map, serialize_signal_name_set, BlockId, SignalNode};
 
 pub use dataflow::DataflowBlockizer;
 
@@ -26,20 +26,21 @@ pub enum CircuitType {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataflowEntry {
-    pub output: SignalId,
-    pub inputs: HashSet<SignalId>,
+    pub output: Vec<SignalNode>,
+    pub inputs: HashSet<SignalNode>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct BlockSet {
     blocks: Vec<Block>,
-    signal_to_drivers: HashMap<SignalId, Vec<BlockId>>,
+    #[serde(serialize_with = "serialize_signal_driver_map")]
+    signal_to_drivers: HashMap<SignalNode, Vec<BlockId>>,
 }
 
 impl BlockSet {
     pub fn new(blocks: Vec<Block>) -> Result<Self> {
         let mut seen_block_ids = HashSet::new();
-        let mut signal_to_drivers: HashMap<SignalId, Vec<BlockId>> = HashMap::new();
+        let mut signal_to_drivers: HashMap<SignalNode, Vec<BlockId>> = HashMap::new();
 
         for block in &blocks {
             if !seen_block_ids.insert(block.id) {
@@ -64,7 +65,7 @@ impl BlockSet {
         &self.blocks
     }
 
-    pub fn drivers_for(&self, signal: &SignalId) -> &[BlockId] {
+    pub fn drivers_for(&self, signal: &SignalNode) -> &[BlockId] {
         self.signal_to_drivers
             .get(signal)
             .map(Vec::as_slice)
@@ -89,10 +90,12 @@ pub struct Block {
     source_file: String,
     line_start: usize,
     line_end: usize,
-    input_signals: HashSet<SignalId>,
-    output_signals: HashSet<SignalId>,
+    #[serde(serialize_with = "serialize_signal_name_set")]
+    input_signals: HashSet<SignalNode>,
+    #[serde(serialize_with = "serialize_signal_name_set")]
+    output_signals: HashSet<SignalNode>,
     dataflow: Vec<DataflowEntry>,
-    ast_snippet: String,
+    code_snippet: String,
 }
 
 impl Block {
@@ -106,13 +109,16 @@ impl Block {
         line_start: usize,
         line_end: usize,
         dataflow: Vec<DataflowEntry>,
-        ast_snippet: impl Into<String>,
+        code_snippet: impl Into<String>,
     ) -> Result<Self> {
         let input_signals = dataflow
             .iter()
             .flat_map(|entry| entry.inputs.iter().cloned())
             .collect();
-        let output_signals = dataflow.iter().map(|entry| entry.output.clone()).collect();
+        let output_signals = dataflow
+            .iter()
+            .flat_map(|entry| entry.output.iter().cloned())
+            .collect();
 
         Self::with_signals(
             id,
@@ -125,7 +131,7 @@ impl Block {
             input_signals,
             output_signals,
             dataflow,
-            ast_snippet,
+            code_snippet,
         )
     }
 
@@ -138,10 +144,10 @@ impl Block {
         source_file: impl Into<String>,
         line_start: usize,
         line_end: usize,
-        input_signals: HashSet<SignalId>,
-        output_signals: HashSet<SignalId>,
+        input_signals: HashSet<SignalNode>,
+        output_signals: HashSet<SignalNode>,
         dataflow: Vec<DataflowEntry>,
-        ast_snippet: impl Into<String>,
+        code_snippet: impl Into<String>,
     ) -> Result<Self> {
         if line_start > line_end {
             bail!("block line range is invalid");
@@ -151,8 +157,10 @@ impl Block {
             .iter()
             .flat_map(|entry| entry.inputs.iter().cloned())
             .collect();
-        let derived_output_signals: HashSet<_> =
-            dataflow.iter().map(|entry| entry.output.clone()).collect();
+        let derived_output_signals: HashSet<_> = dataflow
+            .iter()
+            .flat_map(|entry| entry.output.iter().cloned())
+            .collect();
 
         if input_signals != derived_input_signals {
             bail!("block input_signals do not match dataflow inputs");
@@ -173,7 +181,7 @@ impl Block {
             input_signals,
             output_signals,
             dataflow,
-            ast_snippet: ast_snippet.into(),
+            code_snippet: code_snippet.into(),
         })
     }
 
@@ -205,11 +213,11 @@ impl Block {
         self.line_end
     }
 
-    pub fn input_signals(&self) -> &HashSet<SignalId> {
+    pub fn input_signals(&self) -> &HashSet<SignalNode> {
         &self.input_signals
     }
 
-    pub fn output_signals(&self) -> &HashSet<SignalId> {
+    pub fn output_signals(&self) -> &HashSet<SignalNode> {
         &self.output_signals
     }
 
@@ -217,8 +225,8 @@ impl Block {
         &self.dataflow
     }
 
-    pub fn ast_snippet(&self) -> &str {
-        &self.ast_snippet
+    pub fn code_snippet(&self) -> &str {
+        &self.code_snippet
     }
 }
 
