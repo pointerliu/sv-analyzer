@@ -12,9 +12,11 @@ fn creates_paper_style_blocks_and_merges_chained_assigns() {
         "module demo(\n  input logic clk,\n  input logic a,\n  input logic b,\n  output logic y,\n  output logic z\n);\n  logic tmp;\n\n  assign tmp = a & b;\n  assign y = tmp;\n\n  always_ff @(posedge clk) begin\n    z <= y;\n  end\nendmodule\n",
     );
 
-    let provider = SvParserProvider::default();
-    let parsed = provider.parse_files(&[fixture.clone()]).unwrap();
-    let blockizer = DataflowBlockizer::default();
+    let provider = SvParserProvider;
+    let parsed = provider
+        .parse_files(std::slice::from_ref(&fixture))
+        .unwrap();
+    let blockizer = DataflowBlockizer;
     let block_set = blockizer.blockize(&parsed).unwrap();
 
     let shapes = block_set
@@ -95,9 +97,11 @@ fn creates_port_blocks_for_non_ansi_modules_too() {
         "module legacy(clk, a, y);\n  input logic clk;\n  input logic a;\n  output logic y;\n\n  assign y = a;\nendmodule\n",
     );
 
-    let provider = SvParserProvider::default();
-    let parsed = provider.parse_files(&[fixture.clone()]).unwrap();
-    let blockizer = DataflowBlockizer::default();
+    let provider = SvParserProvider;
+    let parsed = provider
+        .parse_files(std::slice::from_ref(&fixture))
+        .unwrap();
+    let blockizer = DataflowBlockizer;
     let block_set = blockizer.blockize(&parsed).unwrap();
 
     let shapes = block_set

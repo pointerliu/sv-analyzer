@@ -8,6 +8,15 @@ use crate::coverage::CoverageTracker;
 use crate::slicer::{BlockEdgeJson, BlockJson, InstructionExecutionPath, SliceRequest, Slicer};
 use crate::types::{BlockId, BlockNode, SignalId, Timestamp};
 
+type TimedBlockKey = (BlockId, i64);
+type TimedEdgeKey = (TimedBlockKey, TimedBlockKey, Option<SignalId>);
+
+struct SliceAccum<'a> {
+    node_keys: &'a mut HashSet<TimedBlockKey>,
+    edge_keys: &'a mut HashSet<TimedEdgeKey>,
+    block_ids: &'a mut HashSet<BlockId>,
+}
+
 pub struct BluesSlicer {
     block_set: BlockSet,
     blocks_by_id: HashMap<BlockId, Block>,
@@ -36,7 +45,7 @@ impl BluesSlicer {
         let mut visited_signals = HashSet::new();
         let mut visited_driver_outputs = HashSet::new();
         let mut node_keys = HashSet::new();
-        let mut edge_keys = HashSet::new();
+        let mut edge_keys: HashSet<TimedEdgeKey> = HashSet::new();
         let mut block_ids = HashSet::new();
 
         while let Some((signal, time)) = work.pop_front() {
@@ -63,9 +72,11 @@ impl BluesSlicer {
                             add_upstream_edges(
                                 &self.block_set,
                                 &self.blocks_by_id,
-                                &mut node_keys,
-                                &mut edge_keys,
-                                &mut block_ids,
+                                &mut SliceAccum {
+                                    node_keys: &mut node_keys,
+                                    edge_keys: &mut edge_keys,
+                                    block_ids: &mut block_ids,
+                                },
                                 &input,
                                 time,
                                 driver.id(),
@@ -103,9 +114,11 @@ impl BluesSlicer {
                             add_upstream_edges(
                                 &self.block_set,
                                 &self.blocks_by_id,
-                                &mut node_keys,
-                                &mut edge_keys,
-                                &mut block_ids,
+                                &mut SliceAccum {
+                                    node_keys: &mut node_keys,
+                                    edge_keys: &mut edge_keys,
+                                    block_ids: &mut block_ids,
+                                },
                                 &input,
                                 previous_time,
                                 driver.id(),
@@ -189,9 +202,7 @@ impl Slicer for BluesSlicer {
 fn add_upstream_edges(
     block_set: &BlockSet,
     blocks_by_id: &HashMap<BlockId, Block>,
-    node_keys: &mut HashSet<(BlockId, i64)>,
-    edge_keys: &mut HashSet<((BlockId, i64), (BlockId, i64), Option<SignalId>)>,
-    block_ids: &mut HashSet<BlockId>,
+    accum: &mut SliceAccum<'_>,
     signal: &SignalId,
     source_time: Timestamp,
     sink_block_id: BlockId,
@@ -203,9 +214,9 @@ fn add_upstream_edges(
         }
 
         let upstream_key = (*upstream_id, source_time.0);
-        node_keys.insert(upstream_key);
-        block_ids.insert(*upstream_id);
-        edge_keys.insert((
+        accum.node_keys.insert(upstream_key);
+        accum.block_ids.insert(*upstream_id);
+        accum.edge_keys.insert((
             upstream_key,
             (sink_block_id, sink_time.0),
             Some(signal.clone()),

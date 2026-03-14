@@ -32,7 +32,7 @@ fn parses_systemverilog_files_and_retains_blockization_inputs() {
     .unwrap();
     fs::write(&tb_path, "module tb_top(clk);\n  input clk;\nendmodule\n").unwrap();
 
-    let provider = SvParserProvider::default();
+    let provider = SvParserProvider;
     let files = provider
         .parse_files(&[design_path.clone(), tb_path.clone()])
         .unwrap();

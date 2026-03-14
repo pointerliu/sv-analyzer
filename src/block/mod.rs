@@ -96,6 +96,7 @@ pub struct Block {
 }
 
 impl Block {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: BlockId,
         block_type: BlockType,

@@ -12,10 +12,12 @@ fn extracts_statement_level_dataflow_from_assignments_and_conditions() {
         "module helper(\n  input logic x,\n  output logic z\n);\n  assign z = x;\nendmodule\n\nmodule sample(\n  input logic clk,\n  input logic a,\n  input logic b,\n  input logic c,\n  input logic d,\n  input logic e,\n  input logic sel,\n  input logic [1:0] op,\n  input logic alt_sel,\n  input logic alt_sel2,\n  output logic y,\n  output logic q,\n  output logic r,\n  output logic s,\n  output logic h,\n  output logic t,\n  output logic latch_q,\n  output logic p\n);\n  logic next_q;\n\n  function automatic logic pick(input logic value);\n    pick = value;\n  endfunction\n\n  helper helper_inst(.x(a), .z());\n\n  assign y = a & b;\n\n  always_comb begin\n    logic temp_init = b;\n\n    if (op matches (tagged JmpC '{cc:.alt_sel2, addr:.d})) begin\n      p = a;\n    end\n\n    case (op)\n      alt_sel: r = next_q;\n      alt_sel2: r = d;\n      default: r = a;\n    endcase\n\n    h = helper_inst.z;\n    t = pick(a);\n    r += a;\n  end\n\n  always_ff @(posedge clk) begin\n    if (c) begin\n      q <= q + 1;\n    end else begin\n      q <= next_q;\n    end\n  end\n\n  always @(posedge clk) begin\n    s <= q;\n  end\n\n  always_latch begin\n    if (sel) begin\n      latch_q <= a;\n    end\n  end\nendmodule\n",
     );
 
-    let provider = SvParserProvider::default();
-    let parsed = provider.parse_files(&[fixture.clone()]).unwrap();
+    let provider = SvParserProvider;
+    let parsed = provider
+        .parse_files(std::slice::from_ref(&fixture))
+        .unwrap();
 
-    let blockizer = DataflowBlockizer::default();
+    let blockizer = DataflowBlockizer;
     let blocks = blockizer.blockize(&parsed).unwrap();
 
     let actual = collect_entries(&blocks);
