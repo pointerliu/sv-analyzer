@@ -51,6 +51,10 @@ path = "tests/integration/static_slice_demo.rs"
 name = "blues_demo"
 path = "tests/integration/blues_demo.rs"
 
+[[test]]
+name = "slice_json"
+path = "tests/integration/slice_json.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

@@ -15,6 +15,44 @@ pub struct BlockNode {
     pub time: Timestamp,
 }
 
+pub trait StableSliceNode {
+    fn block_id(&self) -> BlockId;
+    fn time(&self) -> Option<Timestamp>;
+}
+
+impl StableSliceNode for BlockNode {
+    fn block_id(&self) -> BlockId {
+        self.block_id
+    }
+
+    fn time(&self) -> Option<Timestamp> {
+        Some(self.time)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StableSliceNodeJson {
+    pub id: usize,
+    pub block_id: BlockId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time: Option<Timestamp>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StableSliceEdgeJson {
+    pub from: usize,
+    pub to: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signal: Option<SignalId>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StableSliceGraphJson {
+    pub nodes: Vec<StableSliceNodeJson>,
+    pub edges: Vec<StableSliceEdgeJson>,
+    pub blocks: Vec<BlockJson>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockEdgeJson {
     pub from: BlockNode,
