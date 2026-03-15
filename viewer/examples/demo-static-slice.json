@@ -1,0 +1,355 @@
+{
+  "target": "TOP.tb.result",
+  "nodes": [
+    {
+      "kind": "block",
+      "id": 0,
+      "block_id": 1
+    },
+    {
+      "kind": "block",
+      "id": 1,
+      "block_id": 2
+    },
+    {
+      "kind": "block",
+      "id": 2,
+      "block_id": 3
+    },
+    {
+      "kind": "block",
+      "id": 3,
+      "block_id": 5
+    },
+    {
+      "kind": "block",
+      "id": 4,
+      "block_id": 6
+    },
+    {
+      "kind": "block",
+      "id": 5,
+      "block_id": 7
+    },
+    {
+      "kind": "block",
+      "id": 6,
+      "block_id": 8
+    },
+    {
+      "kind": "block",
+      "id": 7,
+      "block_id": 9
+    },
+    {
+      "kind": "literal",
+      "id": 8,
+      "signal": {
+        "kind": "literal",
+        "name": "0",
+        "locate": {
+          "offset": 2034,
+          "line": 61,
+          "len": 1
+        }
+      }
+    },
+    {
+      "kind": "literal",
+      "id": 9,
+      "signal": {
+        "kind": "literal",
+        "name": "1'b0",
+        "locate": {
+          "offset": 1974,
+          "line": 60,
+          "len": 1
+        }
+      }
+    },
+    {
+      "kind": "literal",
+      "id": 10,
+      "signal": {
+        "kind": "literal",
+        "name": "2'b00",
+        "locate": {
+          "offset": 1001,
+          "line": 35,
+          "len": 1
+        }
+      }
+    },
+    {
+      "kind": "literal",
+      "id": 11,
+      "signal": {
+        "kind": "literal",
+        "name": "2'b01",
+        "locate": {
+          "offset": 1901,
+          "line": 59,
+          "len": 1
+        }
+      }
+    },
+    {
+      "kind": "literal",
+      "id": 12,
+      "signal": {
+        "kind": "literal",
+        "name": "2'b10",
+        "locate": {
+          "offset": 2114,
+          "line": 64,
+          "len": 1
+        }
+      }
+    },
+    {
+      "kind": "literal",
+      "id": 13,
+      "signal": {
+        "kind": "literal",
+        "name": "2'b11",
+        "locate": {
+          "offset": 2327,
+          "line": 69,
+          "len": 1
+        }
+      }
+    },
+    {
+      "kind": "literal",
+      "id": 14,
+      "signal": {
+        "kind": "literal",
+        "name": "7",
+        "locate": {
+          "offset": 2032,
+          "line": 61,
+          "len": 1
+        }
+      }
+    },
+    {
+      "kind": "literal",
+      "id": 15,
+      "signal": {
+        "kind": "literal",
+        "name": "8'h0",
+        "locate": {
+          "offset": 1713,
+          "line": 55,
+          "len": 1
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": 0,
+      "to": 1,
+      "signal": {
+        "kind": "variable",
+        "name": "TOP.tb.dut.state",
+        "locate": {
+          "offset": 827,
+          "line": 32,
+          "len": 5
+        }
+      }
+    },
+    {
+      "from": 0,
+      "to": 2,
+      "signal": {
+        "kind": "variable",
+        "name": "TOP.tb.dut.state",
+        "locate": {
+          "offset": 1770,
+          "line": 57,
+          "len": 5
+        }
+      }
+    },
+    {
+      "from": 1,
+      "to": 0,
+      "signal": {
+        "kind": "variable",
+        "name": "TOP.tb.dut.next_state",
+        "locate": {
+          "offset": 739,
+          "line": 27,
+          "len": 10
+        }
+      }
+    },
+    {
+      "from": 2,
+      "to": 7,
+      "signal": {
+        "kind": "variable",
+        "name": "TOP.tb.dut.result",
+        "locate": {
+          "offset": 0,
+          "line": 0,
+          "len": 6
+        }
+      }
+    },
+    {
+      "from": 3,
+      "to": 0,
+      "signal": {
+        "kind": "variable",
+        "name": "TOP.tb.dut.rst_n",
+        "locate": {
+          "offset": 617,
+          "line": 24,
+          "len": 5
+        }
+      }
+    },
+    {
+      "from": 3,
+      "to": 2,
+      "signal": {
+        "kind": "variable",
+        "name": "TOP.tb.dut.rst_n",
+        "locate": {
+          "offset": 1676,
+          "line": 54,
+          "len": 5
+        }
+      }
+    },
+    {
+      "from": 4,
+      "to": 1,
+      "signal": {
+        "kind": "variable",
+        "name": "TOP.tb.dut.op",
+        "locate": {
+          "offset": 995,
+          "line": 35,
+          "len": 2
+        }
+      }
+    },
+    {
+      "from": 4,
+      "to": 2,
+      "signal": {
+        "kind": "variable",
+        "name": "TOP.tb.dut.op",
+        "locate": {
+          "offset": 1837,
+          "line": 58,
+          "len": 2
+        }
+      }
+    },
+    {
+      "from": 5,
+      "to": 2,
+      "signal": {
+        "kind": "variable",
+        "name": "TOP.tb.dut.a",
+        "locate": {
+          "offset": 2405,
+          "line": 70,
+          "len": 1
+        }
+      }
+    },
+    {
+      "from": 6,
+      "to": 2,
+      "signal": {
+        "kind": "variable",
+        "name": "TOP.tb.dut.b",
+        "locate": {
+          "offset": 2409,
+          "line": 70,
+          "len": 1
+        }
+      }
+    },
+    {
+      "from": 8,
+      "to": 2
+    },
+    {
+      "from": 9,
+      "to": 2
+    },
+    {
+      "from": 10,
+      "to": 1
+    },
+    {
+      "from": 11,
+      "to": 2
+    },
+    {
+      "from": 12,
+      "to": 2
+    },
+    {
+      "from": 13,
+      "to": 2
+    },
+    {
+      "from": 14,
+      "to": 2
+    },
+    {
+      "from": 15,
+      "to": 2
+    }
+  ],
+  "blocks": [
+    {
+      "id": 1,
+      "scope": "TOP.tb.dut",
+      "block_type": "Always"
+    },
+    {
+      "id": 2,
+      "scope": "TOP.tb.dut",
+      "block_type": "Always"
+    },
+    {
+      "id": 3,
+      "scope": "TOP.tb.dut",
+      "block_type": "Always"
+    },
+    {
+      "id": 5,
+      "scope": "TOP.tb.dut",
+      "block_type": "ModInput"
+    },
+    {
+      "id": 6,
+      "scope": "TOP.tb.dut",
+      "block_type": "ModInput"
+    },
+    {
+      "id": 7,
+      "scope": "TOP.tb.dut",
+      "block_type": "ModInput"
+    },
+    {
+      "id": 8,
+      "scope": "TOP.tb.dut",
+      "block_type": "ModInput"
+    },
+    {
+      "id": 9,
+      "scope": "TOP.tb.dut",
+      "block_type": "ModOutput"
+    }
+  ]
+}

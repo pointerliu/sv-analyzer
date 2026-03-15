@@ -457,7 +457,7 @@ fn bridge_port_block(
         take_block_id(next_block_id),
         template_port_block.block_type(),
         CircuitType::Combinational,
-        parent_scope,
+        child_scope,
         &instance.source_file,
         instance.line_start,
         instance.line_end,

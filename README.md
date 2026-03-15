@@ -76,6 +76,14 @@ cargo test --all-targets -v
 cargo run -- --help
 ```
 
+## 🖼️ Graph Viewer
+
+The repo also includes a static slice graph viewer under `viewer/`.
+
+- serve it locally with `python3 -m http.server 4173 --directory viewer`
+- load JSON produced by `cargo run -- slice ...`
+- see `viewer/README.md` for local preview steps, demo fixture commands, and a quick guide to the rendered scopes, edges, and sidebar
+
 ## 🧰 CLI overview
 
 The binary name is `dataflow-engine`.

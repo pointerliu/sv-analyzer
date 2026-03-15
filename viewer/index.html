@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Slice Graph Viewer</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <main id="main-content" class="app-shell" tabindex="-1">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Static Viewer</p>
+          <h1>Slice Graph Viewer</h1>
+        </div>
+        <p class="topbar-help">
+          Load slice JSON from a file or paste it directly to inspect scopes, edges, and block details.
+        </p>
+      </header>
+
+      <section class="workspace" aria-label="Slice graph workspace">
+        <aside class="controls panel" aria-labelledby="controls-title">
+          <div class="panel-header">
+            <h2 id="controls-title">Inputs</h2>
+            <p>Provide slice JSON from the CLI or use the built-in demo fixture.</p>
+          </div>
+
+          <label class="field">
+            <span>Slice JSON file</span>
+            <input id="file-input" type="file" accept="application/json,.json">
+          </label>
+
+          <label class="field field-grow" for="json-input">
+            <span>Paste slice JSON</span>
+            <textarea
+              id="json-input"
+              spellcheck="false"
+              placeholder="Paste slice JSON here, then choose Load Graph."
+            ></textarea>
+          </label>
+
+          <div class="button-row">
+            <button id="load-graph" type="button">Load Graph</button>
+            <button id="load-demo" type="button" class="button-secondary">Load Demo</button>
+          </div>
+
+          <section class="status-card" id="status-card" data-tone="info">
+            <h3>Load Status</h3>
+            <p id="status-message" role="status" aria-live="polite" aria-atomic="true">
+              Waiting for slice JSON.
+            </p>
+            <p id="status-alert" class="status-alert" role="alert" hidden></p>
+          </section>
+        </aside>
+
+        <section class="graph-stage panel" aria-labelledby="graph-title">
+          <div class="panel-header graph-header">
+            <h2 id="graph-title">Graph Stage</h2>
+            <p>SVG canvas placeholder for scope groups, nodes, and edges.</p>
+          </div>
+
+          <div class="graph-surface">
+            <svg id="graph-canvas" viewBox="0 0 960 720" role="group" aria-label="Interactive slice graph canvas">
+              <defs>
+                <linearGradient id="stageGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.18"></stop>
+                  <stop offset="100%" stop-color="#f97316" stop-opacity="0.1"></stop>
+                </linearGradient>
+              </defs>
+              <rect x="24" y="24" width="912" height="672" rx="28" fill="url(#stageGlow)" stroke="#bfdbfe" stroke-dasharray="10 8"></rect>
+              <g id="graph-placeholder">
+                <text x="80" y="112" class="svg-kicker">SVG STAGE</text>
+                <text x="80" y="160" class="svg-title">Load a slice graph to begin.</text>
+                <text x="80" y="204" class="svg-copy">Task 1 provides the shell, input workflow, and empty stage.</text>
+              </g>
+            </svg>
+          </div>
+        </section>
+
+        <aside class="sidebar panel" aria-labelledby="sidebar-title">
+          <div class="panel-header">
+            <h2 id="sidebar-title">Selection Details</h2>
+            <p>Select a block to inspect its scope, type, id, and any source metadata present in the slice JSON.</p>
+          </div>
+
+          <section class="detail-card">
+            <h3>Block Metadata</h3>
+            <dl class="metadata-list">
+              <div>
+                <dt>Scope</dt>
+                <dd id="meta-scope">Not selected</dd>
+              </div>
+              <div>
+                <dt>Block Type</dt>
+                <dd id="meta-type">Not selected</dd>
+              </div>
+              <div>
+                <dt>Block ID</dt>
+                <dd id="meta-id">Not selected</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section class="detail-card code-card">
+            <h3>Code Snippet</h3>
+              <pre id="code-snippet">// Select a block to inspect its source metadata and snippet.</pre>
+            </section>
+        </aside>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

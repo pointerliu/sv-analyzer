@@ -89,10 +89,6 @@ fn cli_slice_dynamic_supports_scoped_signal_queries() {
         .collect::<Vec<_>>();
 
     assert!(
-        scopes.contains(&"TOP.tb"),
-        "expected dynamic slice to include the parent tb scope: {json:?}"
-    );
-    assert!(
         scopes.contains(&"TOP.tb.dut"),
         "expected dynamic slice to traverse into the instantiated dut scope: {json:?}"
     );
@@ -182,18 +178,26 @@ fn cli_slice_resolves_scoped_signal_through_instance_boundaries() {
         .collect::<Vec<_>>();
 
     assert!(
-        scopes.contains(&"TOP.tb"),
-        "expected slice to include the parent tb scope: {json:?}"
-    );
-    assert!(
         scopes.contains(&"TOP.tb.dut"),
         "expected slice to traverse into the instantiated dut scope: {json:?}"
     );
     assert!(
         blocks
             .iter()
-            .any(|block| block["scope"] == "TOP.tb" && block["block_type"] == "ModOutput"),
-        "expected a boundary ModOutput block for the dut instance: {json:?}"
+            .any(|block| block["scope"] == "TOP.tb.dut" && block["block_type"] == "ModOutput"),
+        "expected the dut ModOutput block to stay in the child scope: {json:?}"
+    );
+    assert!(
+        blocks
+            .iter()
+            .filter(|block| {
+                matches!(
+                    block["block_type"].as_str(),
+                    Some("ModInput") | Some("ModOutput")
+                )
+            })
+            .all(|block| block["scope"] == "TOP.tb.dut"),
+        "expected all child port blocks to keep the child module scope: {json:?}"
     );
 
     fixture.cleanup();
