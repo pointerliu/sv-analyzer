@@ -10,21 +10,21 @@ fn instruction_execution_path_serializes_as_stable_json_graph() {
         nodes: vec![
             TimedSliceNode::Block {
                 block_id: BlockId(17),
-                time: Timestamp(19),
+                time: Some(Timestamp(19)),
             },
             TimedSliceNode::Block {
                 block_id: BlockId(23),
-                time: Timestamp(18),
+                time: Some(Timestamp(18)),
             },
         ],
         edges: vec![SliceEdge {
             from: TimedSliceNode::Block {
                 block_id: BlockId(23),
-                time: Timestamp(18),
+                time: Some(Timestamp(18)),
             },
             to: TimedSliceNode::Block {
                 block_id: BlockId(17),
-                time: Timestamp(19),
+                time: Some(Timestamp(19)),
             },
             signal: Some(SignalNode::named("result")),
         }],
@@ -85,6 +85,7 @@ fn static_slice_graph_serializes_without_time_annotations() {
     let graph: SliceGraph<StaticBlockNode> = SliceGraph {
         nodes: vec![StaticBlockNode::Block {
             block_id: BlockId(5),
+            time: None,
         }],
         edges: Vec::new(),
         blocks: vec![SliceBlock {
@@ -124,11 +125,11 @@ fn stable_export_rejects_duplicate_dynamic_nodes() {
         nodes: vec![
             TimedSliceNode::Block {
                 block_id: BlockId(17),
-                time: Timestamp(19),
+                time: Some(Timestamp(19)),
             },
             TimedSliceNode::Block {
                 block_id: BlockId(17),
-                time: Timestamp(19),
+                time: Some(Timestamp(19)),
             },
         ],
         edges: Vec::new(),
@@ -151,9 +152,11 @@ fn stable_export_rejects_duplicate_static_nodes() {
         nodes: vec![
             StaticBlockNode::Block {
                 block_id: BlockId(5),
+                time: None,
             },
             StaticBlockNode::Block {
                 block_id: BlockId(5),
+                time: None,
             },
         ],
         edges: Vec::new(),

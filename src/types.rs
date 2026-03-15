@@ -106,17 +106,20 @@ impl Hash for SignalNode {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum StaticSliceNode {
-    Block { block_id: BlockId },
-    Literal { signal: SignalNode },
+pub enum TimedSliceNode {
+    Block {
+        block_id: BlockId,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        time: Option<Timestamp>,
+    },
+    Literal {
+        signal: SignalNode,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        time: Option<Timestamp>,
+    },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum TimedSliceNode {
-    Block { block_id: BlockId, time: Timestamp },
-    Literal { signal: SignalNode, time: Timestamp },
-}
+pub type StaticSliceNode = TimedSliceNode;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -189,46 +192,16 @@ pub trait StableSliceNode {
     fn stable_json(&self, id: usize) -> StableSliceNodeJson;
 }
 
-impl StableSliceNode for StaticSliceNode {
-    fn stable_key(&self) -> StableSliceNodeKey {
-        match self {
-            Self::Block { block_id } => StableSliceNodeKey::Block {
-                block_id: *block_id,
-                time: None,
-            },
-            Self::Literal { signal } => StableSliceNodeKey::Literal {
-                signal: signal.clone(),
-                time: None,
-            },
-        }
-    }
-
-    fn stable_json(&self, id: usize) -> StableSliceNodeJson {
-        match self {
-            Self::Block { block_id } => StableSliceNodeJson::Block {
-                id,
-                block_id: *block_id,
-                time: None,
-            },
-            Self::Literal { signal } => StableSliceNodeJson::Literal {
-                id,
-                signal: signal.clone(),
-                time: None,
-            },
-        }
-    }
-}
-
 impl StableSliceNode for TimedSliceNode {
     fn stable_key(&self) -> StableSliceNodeKey {
         match self {
             Self::Block { block_id, time } => StableSliceNodeKey::Block {
                 block_id: *block_id,
-                time: Some(*time),
+                time: *time,
             },
             Self::Literal { signal, time } => StableSliceNodeKey::Literal {
                 signal: signal.clone(),
-                time: Some(*time),
+                time: *time,
             },
         }
     }
@@ -238,12 +211,12 @@ impl StableSliceNode for TimedSliceNode {
             Self::Block { block_id, time } => StableSliceNodeJson::Block {
                 id,
                 block_id: *block_id,
-                time: Some(*time),
+                time: *time,
             },
             Self::Literal { signal, time } => StableSliceNodeJson::Literal {
                 id,
                 signal: signal.clone(),
-                time: Some(*time),
+                time: *time,
             },
         }
     }

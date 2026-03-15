@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use dac26_mcp::block::{Block, BlockSet, BlockType, CircuitType, DataflowEntry};
 use dac26_mcp::slicer::{
-    InstructionExecutionPath, SliceGraph, SliceRequest, StaticBlockNode, StaticSlicer,
+    InstructionExecutionPath, SliceGraph, SliceRequest, Slicer, StaticBlockNode, StaticSlicer,
 };
 use dac26_mcp::types::{BlockId, SignalNode, SignalNodeKind, TimedSliceNode, Timestamp};
 
@@ -11,7 +11,7 @@ fn instruction_execution_path_uses_shared_graph_container() {
     let path: InstructionExecutionPath = SliceGraph {
         nodes: vec![TimedSliceNode::Block {
             block_id: BlockId(99),
-            time: Timestamp(7),
+            time: Some(Timestamp(7)),
         }],
         edges: Vec::new(),
         blocks: Vec::new(),
@@ -21,7 +21,7 @@ fn instruction_execution_path_uses_shared_graph_container() {
         path.nodes[0],
         TimedSliceNode::Block {
             block_id: BlockId(99),
-            time: Timestamp(7)
+            time: Some(Timestamp(7))
         }
     ));
 }
@@ -81,7 +81,7 @@ fn static_slice_returns_timeless_graph_for_transitive_dependencies() {
             .nodes
             .iter()
             .filter_map(|node| match node {
-                StaticBlockNode::Block { block_id } => Some(block_id.0),
+                StaticBlockNode::Block { block_id, .. } => Some(block_id.0),
                 StaticBlockNode::Literal { .. } => None,
             })
             .collect::<Vec<_>>(),
@@ -94,11 +94,11 @@ fn static_slice_returns_timeless_graph_for_transitive_dependencies() {
             .map(|edge| {
                 (
                     match &edge.from {
-                        StaticBlockNode::Block { block_id } => Some(block_id.0),
+                        StaticBlockNode::Block { block_id, .. } => Some(block_id.0),
                         StaticBlockNode::Literal { .. } => None,
                     },
                     match &edge.to {
-                        StaticBlockNode::Block { block_id } => Some(block_id.0),
+                        StaticBlockNode::Block { block_id, .. } => Some(block_id.0),
                         StaticBlockNode::Literal { .. } => None,
                     },
                     edge.signal.as_ref().map(|signal| signal.name.as_str()),
@@ -124,6 +124,42 @@ fn static_slice_returns_timeless_graph_for_transitive_dependencies() {
         !json.contains("\"time\""),
         "static slice graph must not contain time annotations: {json}"
     );
+}
+
+#[test]
+fn static_slicer_implements_shared_slicer_trait_with_none_time_nodes() {
+    let block_set = BlockSet::new(vec![Block::new(
+        BlockId(1),
+        BlockType::Assign,
+        CircuitType::Combinational,
+        "demo",
+        "design.sv",
+        10,
+        10,
+        vec![entry(&["result"], &["a"])],
+        "assign result = a;",
+    )
+    .unwrap()])
+    .unwrap();
+
+    let slicer = StaticSlicer::new(block_set);
+    let graph = Slicer::slice(
+        &slicer,
+        &SliceRequest {
+            signal: SignalNode::named("result"),
+            time: Timestamp(7),
+            min_time: Timestamp(0),
+        },
+    )
+    .unwrap();
+
+    assert!(graph.nodes.iter().any(|node| matches!(
+        node,
+        TimedSliceNode::Block {
+            block_id: BlockId(1),
+            time: None,
+        }
+    )));
 }
 
 #[test]
@@ -154,13 +190,13 @@ fn static_slice_keeps_literals_as_terminal_nodes() {
         .unwrap();
 
     assert!(graph.nodes.iter().any(|node| match node {
-        StaticBlockNode::Literal { signal } => {
+        StaticBlockNode::Literal { signal, .. } => {
             signal.kind == SignalNodeKind::Literal && signal.name == "8'h0"
         }
         _ => false,
     }));
     assert!(graph.edges.iter().any(|edge| match (&edge.from, &edge.to) {
-        (StaticBlockNode::Literal { signal }, StaticBlockNode::Block { block_id }) => {
+        (StaticBlockNode::Literal { signal, .. }, StaticBlockNode::Block { block_id, .. }) => {
             signal.name == "8'h0" && block_id.0 == 1 && edge.signal.is_none()
         }
         _ => false,

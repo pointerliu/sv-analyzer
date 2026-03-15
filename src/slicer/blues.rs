@@ -62,7 +62,7 @@ impl BluesSlicer {
 
                 let driver_node = TimedSliceNode::Block {
                     block_id: driver.id(),
-                    time,
+                    time: Some(time),
                 };
                 if !visited_driver_outputs.insert((driver.id(), time.0, signal.clone())) {
                     continue;
@@ -77,12 +77,12 @@ impl BluesSlicer {
                             if input.is_literal() {
                                 nodes.insert(TimedSliceNode::Literal {
                                     signal: input.clone(),
-                                    time,
+                                    time: Some(time),
                                 });
                                 edge_keys.insert((
                                     TimedSliceNode::Literal {
                                         signal: input,
-                                        time,
+                                        time: Some(time),
                                     },
                                     driver_node.clone(),
                                     None,
@@ -122,7 +122,7 @@ impl BluesSlicer {
                         )? {
                             let previous_node = TimedSliceNode::Block {
                                 block_id: driver.id(),
-                                time: previous_time,
+                                time: Some(previous_time),
                             };
                             nodes.insert(previous_node.clone());
                             block_ids.insert(driver.id());
@@ -142,7 +142,7 @@ impl BluesSlicer {
                             if input.is_literal() {
                                 let literal_node = TimedSliceNode::Literal {
                                     signal: input,
-                                    time: previous_time,
+                                    time: Some(previous_time),
                                 };
                                 nodes.insert(literal_node.clone());
                                 edge_keys.insert((literal_node, driver_node.clone(), None));
@@ -222,7 +222,7 @@ fn add_upstream_edges(
 
         let upstream_node = TimedSliceNode::Block {
             block_id: *upstream_id,
-            time: source_time,
+            time: Some(source_time),
         };
         accum.nodes.insert(upstream_node.clone());
         accum.block_ids.insert(*upstream_id);
@@ -230,7 +230,7 @@ fn add_upstream_edges(
             upstream_node,
             TimedSliceNode::Block {
                 block_id: sink_block_id,
-                time: sink_time,
+                time: Some(sink_time),
             },
             Some(signal.clone()),
         ));

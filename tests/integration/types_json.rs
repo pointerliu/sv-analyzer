@@ -8,16 +8,16 @@ fn block_node_and_graph_dtos_serialize_as_expected() {
     let graph = TraceGraphJson {
         nodes: vec![TimedSliceNode::Block {
             block_id: BlockId(7),
-            time: Timestamp(19),
+            time: Some(Timestamp(19)),
         }],
         edges: vec![BlockEdgeJson {
             from: TimedSliceNode::Block {
                 block_id: BlockId(7),
-                time: Timestamp(19),
+                time: Some(Timestamp(19)),
             },
             to: TimedSliceNode::Literal {
                 signal: SignalNode::literal("8'h0"),
-                time: Timestamp(18),
+                time: Some(Timestamp(18)),
             },
             signal: None,
         }],

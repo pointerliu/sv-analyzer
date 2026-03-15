@@ -55,7 +55,11 @@ fn blues_backtracks_sequential_state_until_coverage_hit_and_respects_min_time() 
         path.nodes
             .iter()
             .filter_map(|node| match node {
-                TimedSliceNode::Block { block_id, time } => Some((block_id.0, time.0)),
+                TimedSliceNode::Block {
+                    block_id,
+                    time: Some(time),
+                } => Some((block_id.0, time.0)),
+                TimedSliceNode::Block { time: None, .. } => None,
                 TimedSliceNode::Literal { .. } => None,
             })
             .collect::<Vec<_>>(),
@@ -66,11 +70,19 @@ fn blues_backtracks_sequential_state_until_coverage_hit_and_respects_min_time() 
             .iter()
             .map(|edge| (
                 match &edge.from {
-                    TimedSliceNode::Block { block_id, time } => Some((block_id.0, time.0)),
+                    TimedSliceNode::Block {
+                        block_id,
+                        time: Some(time),
+                    } => Some((block_id.0, time.0)),
+                    TimedSliceNode::Block { time: None, .. } => None,
                     TimedSliceNode::Literal { .. } => None,
                 },
                 match &edge.to {
-                    TimedSliceNode::Block { block_id, time } => Some((block_id.0, time.0)),
+                    TimedSliceNode::Block {
+                        block_id,
+                        time: Some(time),
+                    } => Some((block_id.0, time.0)),
+                    TimedSliceNode::Block { time: None, .. } => None,
                     TimedSliceNode::Literal { .. } => None,
                 },
                 edge.signal.as_ref().map(|signal| signal.name.as_str()),
@@ -82,7 +94,14 @@ fn blues_backtracks_sequential_state_until_coverage_hit_and_respects_min_time() 
         ]
     );
     assert!(path.nodes.iter().all(|node| match node {
-        TimedSliceNode::Block { time, .. } | TimedSliceNode::Literal { time, .. } => time.0 >= 1,
+        TimedSliceNode::Block {
+            time: Some(time), ..
+        }
+        | TimedSliceNode::Literal {
+            time: Some(time), ..
+        } => time.0 >= 1,
+        TimedSliceNode::Block { time: None, .. } | TimedSliceNode::Literal { time: None, .. } =>
+            false,
     }));
 }
 
@@ -227,17 +246,23 @@ fn blues_keeps_literals_as_terminal_nodes() {
     .unwrap();
 
     assert!(path.nodes.iter().any(|node| match node {
-        TimedSliceNode::Literal { signal, time } => {
+        TimedSliceNode::Literal {
+            signal,
+            time: Some(time),
+        } => {
             signal.kind == SignalNodeKind::Literal && signal.name == "8'h0" && time.0 == 2
         }
         _ => false,
     }));
     assert!(path.edges.iter().any(|edge| match (&edge.from, &edge.to) {
         (
-            TimedSliceNode::Literal { signal, time },
+            TimedSliceNode::Literal {
+                signal,
+                time: Some(time),
+            },
             TimedSliceNode::Block {
                 block_id,
-                time: sink_time,
+                time: Some(sink_time),
             },
         ) => {
             signal.name == "8'h0"

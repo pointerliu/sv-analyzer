@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::types::{
     BlockJson as StableBlockJson, SignalNode, StableSliceEdgeJson, StableSliceGraphJson,
-    StableSliceNode, StableSliceNodeKey, StaticSliceNode, Timestamp,
+    StableSliceNode, StableSliceNodeKey, Timestamp,
 };
 
 pub use blues::BluesSlicer;
@@ -122,15 +122,15 @@ where
     }
 }
 
-pub type StaticBlockNode = StaticSliceNode;
+pub type StaticBlockNode = crate::types::TimedSliceNode;
 
 pub type TimedSliceNode = crate::types::TimedSliceNode;
 
-pub type StaticBlockEdge = SliceEdge<StaticSliceNode>;
+pub type StaticBlockEdge = SliceEdge<TimedSliceNode>;
 
 pub type StaticBlockJson = SliceBlock;
 
-pub type StaticSliceGraph = SliceGraph<StaticSliceNode>;
+pub type StaticSliceGraph = SliceGraph<TimedSliceNode>;
 
 pub type BlockEdgeJson = SliceEdge<TimedSliceNode>;
 

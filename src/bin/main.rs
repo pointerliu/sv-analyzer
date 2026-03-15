@@ -5,7 +5,7 @@ use clap::{Args, Parser, Subcommand};
 use dac26_mcp::ast::{AstProvider, SvParserProvider};
 use dac26_mcp::block::{elaborate_block_set, Blockizer, DataflowBlockizer};
 use dac26_mcp::coverage::{CoverageTracker, VcdCoverageTracker};
-use dac26_mcp::slicer::{BluesSlicer, SliceRequest, StaticSlicer};
+use dac26_mcp::slicer::{BluesSlicer, SliceRequest, Slicer, StaticSlicer};
 use dac26_mcp::types::{SignalNode, Timestamp};
 use dac26_mcp::wave::{WaveformReader, WellenReader};
 use serde::Serialize;
@@ -152,9 +152,8 @@ fn run_slice(args: SliceArgs) -> Result<()> {
             min_time: Timestamp(0),
         };
 
-        let stable_json = StaticSlicer::new(block_set)
-            .slice(&request)?
-            .stable_json_graph()?;
+        let stable_json =
+            Slicer::slice(&StaticSlicer::new(block_set), &request)?.stable_json_graph()?;
         println!("{}", serde_json::to_string_pretty(&stable_json)?);
         return Ok(());
     }
@@ -180,9 +179,8 @@ fn run_slice(args: SliceArgs) -> Result<()> {
         min_time: Timestamp(min_time),
     };
 
-    let stable_json = BluesSlicer::new(block_set, coverage)
-        .slice(&request)?
-        .stable_json_graph()?;
+    let stable_json =
+        Slicer::slice(&BluesSlicer::new(block_set, coverage), &request)?.stable_json_graph()?;
 
     println!("{}", serde_json::to_string_pretty(&stable_json)?);
     Ok(())

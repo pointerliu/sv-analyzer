@@ -4,7 +4,8 @@ use anyhow::Result;
 
 use crate::block::{Block, BlockSet};
 use crate::slicer::{
-    SliceRequest, StaticBlockEdge, StaticBlockJson, StaticBlockNode, StaticSliceGraph,
+    InstructionExecutionPath, SliceRequest, Slicer, StaticBlockEdge, StaticBlockJson,
+    StaticBlockNode, StaticSliceGraph,
 };
 use crate::types::{BlockId, SignalNode};
 
@@ -51,6 +52,7 @@ impl StaticSlicer {
 
                 let driver_node = StaticBlockNode::Block {
                     block_id: *driver_id,
+                    time: None,
                 };
                 nodes.insert(driver_node.clone());
                 block_ids.insert(*driver_id);
@@ -59,6 +61,7 @@ impl StaticSlicer {
                     if input.is_literal() {
                         let literal_node = StaticBlockNode::Literal {
                             signal: input.clone(),
+                            time: None,
                         };
                         nodes.insert(literal_node.clone());
                         edge_keys.insert((literal_node, driver_node.clone(), None));
@@ -70,6 +73,7 @@ impl StaticSlicer {
                         {
                             let upstream_node = StaticBlockNode::Block {
                                 block_id: *upstream_id,
+                                time: None,
                             };
                             nodes.insert(upstream_node.clone());
                             block_ids.insert(*upstream_id);
@@ -113,6 +117,12 @@ impl StaticSlicer {
                 })
                 .collect(),
         })
+    }
+}
+
+impl Slicer for StaticSlicer {
+    fn slice(&self, request: &SliceRequest) -> Result<InstructionExecutionPath> {
+        StaticSlicer::slice(self, request)
     }
 }
 
