@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -201,6 +202,207 @@ fn cli_slice_resolves_scoped_signal_through_instance_boundaries() {
     );
 
     fixture.cleanup();
+}
+
+#[test]
+fn cli_slice_static_traces_across_multi_submodule_demo() {
+    let design = Path::new(env!("CARGO_MANIFEST_DIR")).join("demo/multi_submodule_demo/design.sv");
+    let testbench = Path::new(env!("CARGO_MANIFEST_DIR")).join("demo/multi_submodule_demo/tb.sv");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_main"))
+        .args([
+            "slice",
+            "--static",
+            "--sv",
+            design.to_str().unwrap(),
+            "--sv",
+            testbench.to_str().unwrap(),
+            "--signal",
+            "TOP.tb.result",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let blocks = json["blocks"].as_array().unwrap();
+    let nodes = json["nodes"].as_array().unwrap();
+    let edges = json["edges"].as_array().unwrap();
+    let scopes = blocks
+        .iter()
+        .filter_map(|block| block["scope"].as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    assert!(
+        scopes.contains("TOP.tb.u_top"),
+        "expected top instance scope in slice: {json:?}"
+    );
+    assert!(
+        scopes.contains("TOP.tb.u_top.u_sub1"),
+        "expected submodule1 scope in slice: {json:?}"
+    );
+    assert!(
+        scopes.contains("TOP.tb.u_top.u_sub2"),
+        "expected submodule2 scope in slice: {json:?}"
+    );
+
+    assert!(
+        blocks
+            .iter()
+            .any(|block| { block["scope"] == "TOP.tb.u_top" && block["block_type"] == "ModInput" }),
+        "expected top input port block in top scope: {json:?}"
+    );
+    assert!(
+        blocks.iter().any(|block| {
+            block["scope"] == "TOP.tb.u_top" && block["block_type"] == "ModOutput"
+        }),
+        "expected top output port block in top scope: {json:?}"
+    );
+    assert!(
+        blocks.iter().any(|block| {
+            block["scope"] == "TOP.tb.u_top.u_sub1" && block["block_type"] == "Assign"
+        }),
+        "expected submodule1 logic block in slice: {json:?}"
+    );
+    assert!(
+        blocks.iter().any(|block| {
+            block["scope"] == "TOP.tb.u_top.u_sub1" && block["block_type"] == "Always"
+        }),
+        "expected submodule1 always_comb block in slice: {json:?}"
+    );
+    assert!(
+        blocks.iter().any(|block| {
+            block["scope"] == "TOP.tb.u_top.u_sub2" && block["block_type"] == "Assign"
+        }),
+        "expected submodule2 logic block in slice: {json:?}"
+    );
+    assert!(
+        blocks.iter().any(|block| {
+            block["scope"] == "TOP.tb.u_top.u_sub2" && block["block_type"] == "Always"
+        }),
+        "expected submodule2 sequential block in slice: {json:?}"
+    );
+
+    let block_by_node = nodes
+        .iter()
+        .filter_map(|node| Some((node["id"].as_u64()?, node["block_id"].as_u64()?)))
+        .collect::<std::collections::HashMap<_, _>>();
+    let block_meta = blocks
+        .iter()
+        .filter_map(|block| {
+            Some((
+                block["id"].as_u64()?,
+                (
+                    block["scope"].as_str()?.to_string(),
+                    block["block_type"].as_str()?.to_string(),
+                ),
+            ))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let edge_chain = edges
+        .iter()
+        .filter_map(|edge| {
+            let from_node = edge["from"].as_u64()?;
+            let to_node = edge["to"].as_u64()?;
+            let from_block = *block_by_node.get(&from_node)?;
+            let to_block = *block_by_node.get(&to_node)?;
+            Some((
+                block_meta[&from_block].clone(),
+                block_meta[&to_block].clone(),
+                edge["signal"]["name"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        edge_chain.contains(&(
+            ("TOP.tb.u_top".to_string(), "ModInput".to_string()),
+            ("TOP.tb.u_top.u_sub1".to_string(), "ModInput".to_string()),
+            "TOP.tb.u_top.src".to_string(),
+        )),
+        "expected top input to feed submodule1 input: {edge_chain:?}"
+    );
+    assert!(
+        edge_chain.contains(&(
+            ("TOP.tb.u_top".to_string(), "ModInput".to_string()),
+            ("TOP.tb.u_top.u_sub1".to_string(), "ModInput".to_string()),
+            "TOP.tb.u_top.enable".to_string(),
+        )),
+        "expected top enable input to feed submodule1 input: {edge_chain:?}"
+    );
+    assert!(
+        edge_chain.contains(&(
+            ("TOP.tb.u_top.u_sub1".to_string(), "Assign".to_string()),
+            ("TOP.tb.u_top.u_sub1".to_string(), "Always".to_string()),
+            "TOP.tb.u_top.u_sub1.src_masked".to_string(),
+        )),
+        "expected submodule1 assign to feed its always block: {edge_chain:?}"
+    );
+    assert!(
+        edge_chain.contains(&(
+            ("TOP.tb.u_top.u_sub1".to_string(), "Assign".to_string()),
+            ("TOP.tb.u_top.u_sub1".to_string(), "Always".to_string()),
+            "TOP.tb.u_top.u_sub1.src_inverted".to_string(),
+        )),
+        "expected second assign output to feed submodule1 always block: {edge_chain:?}"
+    );
+    assert!(
+        edge_chain.contains(&(
+            ("TOP.tb.u_top.u_sub1".to_string(), "Always".to_string()),
+            ("TOP.tb.u_top.u_sub1".to_string(), "ModOutput".to_string()),
+            "TOP.tb.u_top.u_sub1.stage1".to_string(),
+        )),
+        "expected submodule1 always block to feed its output port: {edge_chain:?}"
+    );
+    assert!(
+        edge_chain.contains(&(
+            ("TOP.tb.u_top".to_string(), "ModInput".to_string()),
+            ("TOP.tb.u_top.u_sub2".to_string(), "ModInput".to_string()),
+            "TOP.tb.u_top.rst_n".to_string(),
+        )),
+        "expected top reset input to feed submodule2 input: {edge_chain:?}"
+    );
+    assert!(
+        edge_chain.contains(&(
+            ("TOP.tb.u_top.u_sub1".to_string(), "ModOutput".to_string()),
+            ("TOP.tb.u_top.u_sub2".to_string(), "ModInput".to_string()),
+            "TOP.tb.u_top.stage1".to_string(),
+        )),
+        "expected submodule1 output to feed submodule2 input: {edge_chain:?}"
+    );
+    assert!(
+        edge_chain.contains(&(
+            ("TOP.tb.u_top.u_sub2".to_string(), "Always".to_string()),
+            ("TOP.tb.u_top.u_sub2".to_string(), "Assign".to_string()),
+            "TOP.tb.u_top.u_sub2.stage2".to_string(),
+        )),
+        "expected submodule2 sequential block to feed assign result block: {edge_chain:?}"
+    );
+    assert!(
+        edge_chain.contains(&(
+            ("TOP.tb.u_top.u_sub2".to_string(), "Assign".to_string()),
+            ("TOP.tb.u_top.u_sub2".to_string(), "ModOutput".to_string()),
+            "TOP.tb.u_top.u_sub2.result".to_string(),
+        )),
+        "expected submodule2 assign to feed its output port: {edge_chain:?}"
+    );
+    assert!(
+        edge_chain.contains(&(
+            ("TOP.tb.u_top.u_sub2".to_string(), "ModOutput".to_string()),
+            ("TOP.tb.u_top".to_string(), "ModOutput".to_string()),
+            "TOP.tb.u_top.result".to_string(),
+        )),
+        "expected top output port to receive the traced result from submodule2: {edge_chain:?}"
+    );
 }
 
 struct SliceFixture {

@@ -448,6 +448,56 @@ fn captures_demo_design_line_ranges_code_snippets_and_top_level_outputs() {
     assert!(result_output_json.get("ast_snippet").is_none());
 }
 
+#[test]
+fn blockize_assigns_stable_ids_for_identical_inputs() {
+    let design = Path::new(env!("CARGO_MANIFEST_DIR")).join("demo/multi_submodule_demo/design.sv");
+    let testbench = Path::new(env!("CARGO_MANIFEST_DIR")).join("demo/multi_submodule_demo/tb.sv");
+
+    let parsed_once = SvParserProvider
+        .parse_files(&[design.clone(), testbench.clone()])
+        .unwrap();
+    let parsed_twice = SvParserProvider.parse_files(&[design, testbench]).unwrap();
+
+    let first = DataflowBlockizer.blockize(&parsed_once).unwrap();
+    let second = DataflowBlockizer.blockize(&parsed_twice).unwrap();
+
+    let first_by_snippet = first
+        .blocks()
+        .iter()
+        .map(|block| {
+            (
+                (
+                    block.module_scope().to_string(),
+                    block.line_start(),
+                    block.line_end(),
+                    block.code_snippet().to_string(),
+                ),
+                block.id().0,
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let second_by_snippet = second
+        .blocks()
+        .iter()
+        .map(|block| {
+            (
+                (
+                    block.module_scope().to_string(),
+                    block.line_start(),
+                    block.line_end(),
+                    block.code_snippet().to_string(),
+                ),
+                block.id().0,
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+
+    assert_eq!(
+        first_by_snippet, second_by_snippet,
+        "expected stable block IDs for identical inputs"
+    );
+}
+
 fn sorted_outputs(signals: &[dac26_mcp::types::SignalNode]) -> Vec<String> {
     let mut values = signals
         .iter()
