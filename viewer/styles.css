@@ -320,6 +320,18 @@ textarea:focus-visible {
   stroke-dasharray: 10 8;
 }
 
+.scope-resize-handle {
+  fill: #ffffff;
+  stroke: rgba(37, 99, 235, 0.92);
+  stroke-width: 2;
+  cursor: nwse-resize;
+}
+
+.scope-resize-handle:hover,
+.scope-resize-handle:focus-visible {
+  fill: rgba(219, 234, 254, 0.96);
+}
+
 .scope-label {
   fill: var(--primary);
   font-family: "Fira Code", "Cascadia Code", monospace;
@@ -337,7 +349,11 @@ textarea:focus-visible {
 }
 
 .block-node {
-  cursor: pointer;
+  cursor: grab;
+}
+
+.block-node:active {
+  cursor: grabbing;
 }
 
 .block-node:focus-visible {
@@ -417,6 +433,7 @@ textarea:focus-visible {
   stroke-width: 2.25;
   stroke-linecap: round;
   stroke-linejoin: round;
+  cursor: pointer;
 }
 
 .graph-edge-head {
@@ -425,6 +442,13 @@ textarea:focus-visible {
   stroke-width: 2.25;
   stroke-linecap: round;
   stroke-linejoin: round;
+  cursor: pointer;
+}
+
+.graph-edge.is-selected,
+.graph-edge-head.is-selected {
+  stroke: #2563eb;
+  stroke-width: 2.8;
 }
 
 .edge-label {

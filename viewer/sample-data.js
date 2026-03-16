@@ -3,7 +3,7 @@ export const DEMO_SLICE_LABEL = "checked-in demo"
 export const DEMO_TARGET_SIGNAL = "TOP.tb.result"
 
 export async function loadDemoSliceText() {
-  const response = await fetch(DEMO_SLICE_URL)
+  const response = await fetch(DEMO_SLICE_URL, { cache: "reload" })
 
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} while loading ${DEMO_SLICE_URL.pathname}`)

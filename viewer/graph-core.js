@@ -252,9 +252,45 @@ export function computeLayout(graph) {
   return layout
 }
 
+export function applyLayoutOverrides(baseLayout, overrides = {}) {
+  const blockOffsets = overrides.blockOffsets ?? new Map()
+  const scopeSizeAdjustments = overrides.scopeSizeAdjustments ?? new Map()
+  const blocks = new Map()
+  const scopes = new Map()
+  let width = baseLayout.width
+  let height = baseLayout.height
+
+  for (const [blockId, rect] of baseLayout.blocks) {
+    const offset = blockOffsets.get(blockId) ?? { x: 0, y: 0 }
+    const nextRect = {
+      ...rect,
+      x: rect.x + (offset.x ?? 0),
+      y: rect.y + (offset.y ?? 0),
+    }
+    blocks.set(blockId, nextRect)
+    width = Math.max(width, nextRect.x + nextRect.width + STAGE_PAD)
+    height = Math.max(height, nextRect.y + nextRect.height + STAGE_PAD)
+  }
+
+  for (const [scopeName, rect] of baseLayout.scopes) {
+    const adjust = scopeSizeAdjustments.get(scopeName) ?? { width: 0, height: 0 }
+    const nextRect = {
+      ...rect,
+      width: Math.max(120, rect.width + (adjust.width ?? 0)),
+      height: Math.max(90, rect.height + (adjust.height ?? 0)),
+    }
+    scopes.set(scopeName, nextRect)
+    width = Math.max(width, nextRect.x + nextRect.width + STAGE_PAD)
+    height = Math.max(height, nextRect.y + nextRect.height + STAGE_PAD)
+  }
+
+  return { ...baseLayout, width, height, blocks, scopes }
+}
+
 export function computeEdgeRoutes(graph, layout) {
   const laneCounts = new Map()
   const edges = [...graph.edges].sort((left, right) => left.id - right.id)
+  const globalRight = Math.max(...[...layout.blocks.values()].map((rect) => rect.x + rect.width))
 
   return edges.map((edge) => {
     const fromRect = layout.blocks.get(edge.fromNode.id)
@@ -282,35 +318,12 @@ export function computeEdgeRoutes(graph, layout) {
       column: toRect.column,
     }
 
-    const isForward = from.right <= to.left
-    const laneKey = isForward
-      ? `forward:${from.column}->${to.column}`
-      : `return:${Math.max(from.right, to.right)}`
+    const sourcePoint = { x: from.right, y: from.centerY }
+    const targetAnchor = chooseTargetAnchor(from, to)
+    const laneKey = `${targetAnchor.face}:${from.column}->${to.column}`
     const laneIndex = laneCounts.get(laneKey) ?? 0
     laneCounts.set(laneKey, laneIndex + 1)
-
-    let points
-    if (isForward) {
-      const baseLaneX = from.right + (to.left - from.right) / 2
-      const laneSpread = laneIndex * 18
-      const laneX = baseLaneX + (laneIndex % 2 === 0 ? laneSpread : -laneSpread)
-      points = [
-        { x: from.right, y: from.centerY },
-        { x: laneX, y: from.centerY },
-        { x: laneX, y: to.centerY },
-        { x: to.left, y: to.centerY },
-      ]
-    } else {
-      const laneX = Math.max(from.right, to.right) + 28 + laneIndex * 18
-      const laneY = Math.min(from.centerY, to.centerY) - 28 - laneIndex * 18
-      points = [
-        { x: from.right, y: from.centerY },
-        { x: laneX, y: from.centerY },
-        { x: laneX, y: laneY },
-        { x: to.right, y: laneY },
-        { x: to.right, y: to.centerY },
-      ]
-    }
+    const points = buildEdgePoints(sourcePoint, targetAnchor, from, to, laneIndex, globalRight)
 
     return {
       edgeId: edge.id,
@@ -320,6 +333,54 @@ export function computeEdgeRoutes(graph, layout) {
       points,
     }
   }).filter(Boolean)
+}
+
+function chooseTargetAnchor(from, to) {
+  if (to.right <= from.left) {
+    return { face: 'left', x: to.left, y: to.centerY }
+  }
+  if (to.centerY < from.centerY) {
+    return { face: 'bottom', x: to.centerX, y: to.bottom }
+  }
+  return { face: 'top', x: to.centerX, y: to.top }
+}
+
+function buildEdgePoints(sourcePoint, targetAnchor, from, to, laneIndex, globalRight) {
+  const laneGap = 28 + laneIndex * 18
+  const outerRightX = Math.max(globalRight + laneGap, sourcePoint.x + laneGap)
+
+  if (targetAnchor.face === 'left') {
+    const bridgeY = Math.min(sourcePoint.y, targetAnchor.y) - laneGap
+    const leftApproachX = targetAnchor.x - laneGap
+    return [
+      sourcePoint,
+      { x: outerRightX, y: sourcePoint.y },
+      { x: outerRightX, y: bridgeY },
+      { x: leftApproachX, y: bridgeY },
+      { x: leftApproachX, y: targetAnchor.y },
+      targetAnchor,
+    ]
+  }
+
+  if (targetAnchor.face === 'bottom') {
+    const belowTargetY = targetAnchor.y + laneGap
+    return [
+      sourcePoint,
+      { x: outerRightX, y: sourcePoint.y },
+      { x: outerRightX, y: belowTargetY },
+      { x: targetAnchor.x, y: belowTargetY },
+      targetAnchor,
+    ]
+  }
+
+  const aboveTargetY = targetAnchor.y - laneGap
+  return [
+    sourcePoint,
+    { x: outerRightX, y: sourcePoint.y },
+    { x: outerRightX, y: aboveTargetY },
+    { x: targetAnchor.x, y: aboveTargetY },
+    targetAnchor,
+  ]
 }
 
 export function edgeLabelPosition(route) {
@@ -348,6 +409,49 @@ export function edgeLabelPosition(route) {
 
 export function buildPolylinePath(points) {
   return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ")
+}
+
+export function buildCurvedPath(points, radius = 18) {
+  if (points.length < 2) {
+    return ""
+  }
+  if (points.length === 2) {
+    const [start, end] = points
+    const controlOffset = Math.max(Math.abs(end.x - start.x), Math.abs(end.y - start.y)) * 0.35
+    const controlOne = { x: start.x + controlOffset, y: start.y }
+    const controlTwo = { x: end.x - controlOffset, y: end.y }
+    return `M ${start.x} ${start.y} C ${controlOne.x} ${controlOne.y}, ${controlTwo.x} ${controlTwo.y}, ${end.x} ${end.y}`
+  }
+
+  const commands = [`M ${points[0].x} ${points[0].y}`]
+
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const prev = points[index - 1]
+    const curr = points[index]
+    const next = points[index + 1]
+
+    const prevDx = curr.x - prev.x
+    const prevDy = curr.y - prev.y
+    const nextDx = next.x - curr.x
+    const nextDy = next.y - curr.y
+    const prevLen = Math.hypot(prevDx, prevDy)
+    const nextLen = Math.hypot(nextDx, nextDy)
+    const enter = {
+      x: curr.x - (prevDx / (prevLen || 1)) * Math.min(radius, prevLen / 2),
+      y: curr.y - (prevDy / (prevLen || 1)) * Math.min(radius, prevLen / 2),
+    }
+    const exit = {
+      x: curr.x + (nextDx / (nextLen || 1)) * Math.min(radius, nextLen / 2),
+      y: curr.y + (nextDy / (nextLen || 1)) * Math.min(radius, nextLen / 2),
+    }
+
+    commands.push(`L ${enter.x} ${enter.y}`)
+    commands.push(`Q ${curr.x} ${curr.y}, ${exit.x} ${exit.y}`)
+  }
+
+  const end = points[points.length - 1]
+  commands.push(`L ${end.x} ${end.y}`)
+  return commands.join(" ")
 }
 
 export function buildArrowHead(points, size = 10, wing = 4) {

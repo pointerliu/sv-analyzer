@@ -166,6 +166,10 @@ pub struct BlockJson {
     pub id: BlockId,
     pub scope: String,
     pub block_type: String,
+    pub source_file: String,
+    pub line_start: usize,
+    pub line_end: usize,
+    pub code_snippet: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

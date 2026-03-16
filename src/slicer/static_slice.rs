@@ -114,6 +114,10 @@ impl StaticSlicer {
                     id: block.id(),
                     scope: block.module_scope().to_string(),
                     block_type: format!("{:?}", block.block_type()),
+                    source_file: block.source_file().to_string(),
+                    line_start: block.line_start(),
+                    line_end: block.line_end(),
+                    code_snippet: block.code_snippet().to_string(),
                 })
                 .collect(),
         })

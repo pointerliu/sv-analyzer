@@ -32,6 +32,10 @@ pub struct SliceBlock {
     pub id: crate::types::BlockId,
     pub scope: String,
     pub block_type: String,
+    pub source_file: String,
+    pub line_start: usize,
+    pub line_end: usize,
+    pub code_snippet: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -102,6 +106,10 @@ where
                     id: block.id,
                     scope: block.scope.clone(),
                     block_type: block.block_type.clone(),
+                    source_file: block.source_file.clone(),
+                    line_start: block.line_start,
+                    line_end: block.line_end,
+                    code_snippet: block.code_snippet.clone(),
                 })
                 .collect(),
         })

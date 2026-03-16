@@ -135,6 +135,15 @@ fn cli_slice_supports_static_graph_output() {
     assert!(json["edges"].is_array());
     assert!(json["blocks"].is_array());
     assert!(
+        json["blocks"].as_array().unwrap().iter().all(|block| {
+            block.get("source_file").is_some()
+                && block.get("line_start").is_some()
+                && block.get("line_end").is_some()
+                && block.get("code_snippet").is_some()
+        }),
+        "slice block metadata should include source details for the viewer sidebar: {json:?}"
+    );
+    assert!(
         json["nodes"]
             .as_array()
             .unwrap()
@@ -199,6 +208,26 @@ fn cli_slice_resolves_scoped_signal_through_instance_boundaries() {
             })
             .all(|block| block["scope"] == "TOP.tb.dut"),
         "expected all child port blocks to keep the child module scope: {json:?}"
+    );
+    assert!(
+        blocks.iter().any(|block| {
+            block["scope"] == "TOP.tb.dut"
+                && block["block_type"] == "ModInput"
+                && block["code_snippet"]
+                    .as_str()
+                    .is_some_and(|snippet| snippet.contains("input logic a") || snippet.contains("input logic clk"))
+        }),
+        "expected child ModInput block to keep port declaration snippet, not instance call: {json:?}"
+    );
+    assert!(
+        blocks.iter().any(|block| {
+            block["scope"] == "TOP.tb.dut"
+                && block["block_type"] == "ModOutput"
+                && block["code_snippet"]
+                    .as_str()
+                    .is_some_and(|snippet| snippet.contains("output logic result"))
+        }),
+        "expected child ModOutput block to keep port declaration snippet: {json:?}"
     );
 
     fixture.cleanup();

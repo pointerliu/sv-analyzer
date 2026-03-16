@@ -32,10 +32,7 @@ struct ModuleTemplate {
 struct ModuleInstance {
     module_name: String,
     instance_name: String,
-    source_file: String,
     line_start: usize,
-    line_end: usize,
-    code_snippet: String,
     connections: HashMap<String, HashSet<SignalNode>>,
 }
 
@@ -181,8 +178,6 @@ fn collect_module_instances(
                         .map(|template| template.port_order.as_slice())
                         .unwrap_or(&[]);
                     let line_start = start_line(RefNode::ModuleInstantiation(module_instantiation));
-                    let line_end = line_start;
-                    let code_snippet = snippet_from_source(&file.source_text, line_start, line_end);
 
                     for hierarchical_instance in module_instantiation.nodes.2.contents() {
                         instances_by_module
@@ -194,10 +189,7 @@ fn collect_module_instances(
                                     &file.syntax_tree,
                                     (&hierarchical_instance.nodes.0.nodes.0).into(),
                                 ),
-                                source_file: file.path.display().to_string(),
                                 line_start,
-                                line_end,
-                                code_snippet: code_snippet.clone(),
                                 connections: module_instance_connections(
                                     &file.syntax_tree,
                                     hierarchical_instance,
@@ -458,11 +450,11 @@ fn bridge_port_block(
         template_port_block.block_type(),
         CircuitType::Combinational,
         child_scope,
-        &instance.source_file,
-        instance.line_start,
-        instance.line_end,
+        template_port_block.source_file(),
+        template_port_block.line_start(),
+        template_port_block.line_end(),
         dataflow,
-        &instance.code_snippet,
+        template_port_block.code_snippet(),
     )?))
 }
 

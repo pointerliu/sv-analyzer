@@ -314,42 +314,74 @@
     {
       "id": 1,
       "scope": "TOP.tb.dut",
-      "block_type": "Always"
+      "block_type": "Always",
+      "source_file": "demo/trace_coverage_demo/design.sv",
+      "line_start": 23,
+      "line_end": 28,
+      "code_snippet": "always_ff @(posedge clk or negedge rst_n) begin\n        if (!rst_n)                           // Line 25: reset branch\n            state <= ST_IDLE;\n        else\n            state <= next_state;\n    end"
     },
     {
       "id": 2,
       "scope": "TOP.tb.dut",
-      "block_type": "Always"
+      "block_type": "Always",
+      "source_file": "demo/trace_coverage_demo/design.sv",
+      "line_start": 31,
+      "line_end": 50,
+      "code_snippet": "always_comb begin\n        next_state = state;\n        case (state)                          // Line 33: case statement\n            ST_IDLE: begin                    // Line 34: case IDLE\n                if (op != 2'b00)              // Line 35: if op != NOP\n                    next_state = ST_EXEC;\n                else\n                    next_state = ST_IDLE;     // Line 38: else stay idle\n            end\n            ST_EXEC: begin                    // Line 40: case EXEC\n                next_state = ST_DONE;\n            end\n            ST_DONE: begin                    // Line 43: case DONE\n                next_state = ST_IDLE;\n            end\n            ST_ERROR: begin                   // Line 46: case ERROR\n                next_state = ST_IDLE;\n            end\n        endcase\n    end"
     },
     {
       "id": 3,
       "scope": "TOP.tb.dut",
-      "block_type": "Always"
+      "block_type": "Always",
+      "source_file": "demo/trace_coverage_demo/design.sv",
+      "line_start": 53,
+      "line_end": 79,
+      "code_snippet": "always_ff @(posedge clk or negedge rst_n) begin\n        if (!rst_n) begin\n            result   <= 8'h0;\n            overflow <= 1'b0;\n        end else if (state == ST_EXEC) begin  // Line 56: exec branch\n            case (op)                         // Line 57: op case\n                2'b01: begin                  // Line 58: ADD\n                    tmp = {1'b0, a} + {1'b0, b};\n                    result   <= tmp[7:0];\n                    overflow <= tmp[8];\n                end\n                2'b10: begin                  // Line 63: SUB\n                    tmp = {1'b0, a} - {1'b0, b};\n                    result   <= tmp[7:0];\n                    overflow <= tmp[8];\n                end\n                2'b11: begin                  // Line 68: AND\n                    result   <= a & b;\n                    overflow <= 1'b0;\n                end\n                default: begin                // Line 72: default/NOP\n                    result   <= 8'h0;\n                    overflow <= 1'b0;\n                end\n            endcase\n        end\n    end"
     },
     {
       "id": 5,
       "scope": "TOP.tb.dut",
-      "block_type": "ModInput"
+      "block_type": "ModInput",
+      "source_file": "demo/trace_coverage_demo/tb.sv",
+      "line_start": 11,
+      "line_end": 11,
+      "code_snippet": "alu dut ("
     },
     {
       "id": 6,
       "scope": "TOP.tb.dut",
-      "block_type": "ModInput"
+      "block_type": "ModInput",
+      "source_file": "demo/trace_coverage_demo/tb.sv",
+      "line_start": 11,
+      "line_end": 11,
+      "code_snippet": "alu dut ("
     },
     {
       "id": 7,
       "scope": "TOP.tb.dut",
-      "block_type": "ModInput"
+      "block_type": "ModInput",
+      "source_file": "demo/trace_coverage_demo/tb.sv",
+      "line_start": 11,
+      "line_end": 11,
+      "code_snippet": "alu dut ("
     },
     {
       "id": 8,
       "scope": "TOP.tb.dut",
-      "block_type": "ModInput"
+      "block_type": "ModInput",
+      "source_file": "demo/trace_coverage_demo/tb.sv",
+      "line_start": 11,
+      "line_end": 11,
+      "code_snippet": "alu dut ("
     },
     {
       "id": 9,
       "scope": "TOP.tb.dut",
-      "block_type": "ModOutput"
+      "block_type": "ModOutput",
+      "source_file": "demo/trace_coverage_demo/tb.sv",
+      "line_start": 11,
+      "line_end": 11,
+      "code_snippet": "alu dut ("
     }
   ]
 }

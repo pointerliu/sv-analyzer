@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
 import {
+  applyLayoutOverrides,
   buildArrowHead,
+  buildCurvedPath,
   buildPolylinePath,
   computeEdgeRoutes,
   computeLayout,
@@ -107,4 +109,85 @@ test('arrow head follows the final segment direction', () => {
   assert.match(shaft, /^M 100 40 L 60 40$/)
   assert.match(head, /^M /)
   assert.ok(head.includes('L 60 40 L'), 'arrow head should terminate at the line tip')
+})
+
+test('layout overrides move blocks and resize scopes deterministically', () => {
+  const baseLayout = {
+    width: 960,
+    height: 720,
+    blocks: new Map([[1, { x: 100, y: 120, width: 180, height: 56, column: 'center' }]]),
+    scopes: new Map([['TOP.tb', { x: 24, y: 24, width: 320, height: 200, depth: 1 }]]),
+  }
+
+  const next = applyLayoutOverrides(baseLayout, {
+    blockOffsets: new Map([[1, { x: 40, y: -10 }]]),
+    scopeSizeAdjustments: new Map([['TOP.tb', { width: 80, height: 50 }]]),
+  })
+
+  assert.deepEqual(next.blocks.get(1), { x: 140, y: 110, width: 180, height: 56, column: 'center' })
+  assert.equal(next.scopes.get('TOP.tb').width, 400)
+  assert.equal(next.scopes.get('TOP.tb').height, 250)
+})
+
+test('curved path rounds orthogonal route corners', () => {
+  const path = buildCurvedPath([
+    { x: 100, y: 100 },
+    { x: 160, y: 100 },
+    { x: 160, y: 180 },
+    { x: 240, y: 180 },
+  ])
+
+  assert.match(path, /^M 100 100 L /)
+  assert.ok(path.includes('Q 160 100,'), 'expected a rounded corner at the first bend')
+  assert.ok(path.includes('Q 160 180,'), 'expected a rounded corner at the second bend')
+  assert.ok(path.endsWith('L 240 180'))
+})
+
+test('edge routing starts from right face and never enters target from right face', () => {
+  const graph = {
+    edges: [
+      {
+        id: 0,
+        label: 'left-target',
+        fromNode: { id: 1, kind: 'block' },
+        toNode: { id: 2, kind: 'block' },
+      },
+      {
+        id: 1,
+        label: 'upper-target',
+        fromNode: { id: 1, kind: 'block' },
+        toNode: { id: 3, kind: 'block' },
+      },
+      {
+        id: 2,
+        label: 'lower-target',
+        fromNode: { id: 1, kind: 'block' },
+        toNode: { id: 4, kind: 'block' },
+      },
+    ],
+  }
+
+  const layout = {
+    blocks: new Map([
+      [1, { x: 320, y: 200, width: 180, height: 56, column: 'center' }],
+      [2, { x: 40, y: 200, width: 180, height: 56, column: 'left' }],
+      [3, { x: 320, y: 40, width: 180, height: 56, column: 'center' }],
+      [4, { x: 320, y: 360, width: 180, height: 56, column: 'center' }],
+    ]),
+  }
+
+  const routes = computeEdgeRoutes(graph, layout)
+  const byId = new Map(routes.map((route) => [route.edgeId, route]))
+
+  assert.deepEqual(byId.get(0).points[0], { x: 500, y: 228 })
+  assert.equal(byId.get(0).points.at(-1).face, 'left')
+  assert.deepEqual({ x: byId.get(0).points.at(-1).x, y: byId.get(0).points.at(-1).y }, { x: 40, y: 228 })
+
+  assert.deepEqual(byId.get(1).points[0], { x: 500, y: 228 })
+  assert.equal(byId.get(1).points.at(-1).face, 'bottom')
+  assert.deepEqual({ x: byId.get(1).points.at(-1).x, y: byId.get(1).points.at(-1).y }, { x: 410, y: 96 })
+
+  assert.deepEqual(byId.get(2).points[0], { x: 500, y: 228 })
+  assert.equal(byId.get(2).points.at(-1).face, 'top')
+  assert.deepEqual({ x: byId.get(2).points.at(-1).x, y: byId.get(2).points.at(-1).y }, { x: 410, y: 360 })
 })

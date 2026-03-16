@@ -1,6 +1,8 @@
 import { DEMO_SLICE_LABEL, loadDemoSliceText } from "./sample-data.js"
 import {
+  applyLayoutOverrides,
   buildArrowHead,
+  buildCurvedPath,
   buildPolylinePath,
   computeEdgeRoutes,
   computeLayout as computeGraphLayout,
@@ -45,15 +47,21 @@ const appState = {
   source: null,
   rawGraph: null,
   normalizedGraph: null,
+  baseLayout: null,
   layout: null,
   selectedBlockId: null,
+  selectedEdgeId: null,
   targetSignal: null,
   targetDriverBlockId: null,
+  blockOffsets: new Map(),
+  scopeSizeAdjustments: new Map(),
   debugVisible: readStoredDebugPreference(),
 }
 
 let debugToggleButton = null
 let debugOverlay = null
+let activePointerAction = null
+let suppressNextBlockClick = false
 
 function setStatus(message, tone = "info") {
   if (elements.statusCard) {
@@ -320,9 +328,131 @@ function selectBlock(blockId) {
   }
 
   appState.selectedBlockId = blockId
+  appState.selectedEdgeId = null
   updateSelectionSidebar(blockNode)
   renderGraph()
   updateDebugState()
+}
+
+function selectEdge(edgeId) {
+  appState.selectedEdgeId = appState.selectedEdgeId === edgeId ? null : edgeId
+  renderGraph()
+  updateDebugState()
+}
+
+function recomputeInteractiveLayout() {
+  if (!appState.baseLayout || !appState.normalizedGraph) {
+    appState.layout = null
+    return
+  }
+
+  const layout = applyLayoutOverrides(appState.baseLayout, {
+    blockOffsets: appState.blockOffsets,
+    scopeSizeAdjustments: appState.scopeSizeAdjustments,
+  })
+  layout.edgeRoutes = computeEdgeRoutes(appState.normalizedGraph, layout)
+  appState.layout = layout
+}
+
+function getPointerPosition(event) {
+  if (!elements.graphCanvas) {
+    return { x: 0, y: 0 }
+  }
+  const rect = elements.graphCanvas.getBoundingClientRect()
+  const viewBox = elements.graphCanvas.viewBox.baseVal
+  const scaleX = viewBox.width / rect.width
+  const scaleY = viewBox.height / rect.height
+  return {
+    x: (event.clientX - rect.left) * scaleX,
+    y: (event.clientY - rect.top) * scaleY,
+  }
+}
+
+function finishPointerAction() {
+  activePointerAction = null
+  window.removeEventListener("pointermove", handlePointerMove)
+  window.removeEventListener("pointerup", handlePointerUp)
+  window.removeEventListener("pointercancel", handlePointerUp)
+  window.removeEventListener("mousemove", handlePointerMove)
+  window.removeEventListener("mouseup", handlePointerUp)
+}
+
+function handlePointerMove(event) {
+  if (!activePointerAction) {
+    return
+  }
+
+  const point = getPointerPosition(event)
+  if (activePointerAction.type === "drag-block") {
+    const delta = {
+      x: point.x - activePointerAction.start.x,
+      y: point.y - activePointerAction.start.y,
+    }
+    if (Math.abs(delta.x) > 2 || Math.abs(delta.y) > 2) {
+      activePointerAction.moved = true
+      suppressNextBlockClick = true
+    }
+    appState.blockOffsets.set(activePointerAction.blockId, {
+      x: activePointerAction.initial.x + delta.x,
+      y: activePointerAction.initial.y + delta.y,
+    })
+  }
+
+  if (activePointerAction.type === "resize-scope") {
+    const delta = {
+      width: point.x - activePointerAction.start.x,
+      height: point.y - activePointerAction.start.y,
+    }
+    appState.scopeSizeAdjustments.set(activePointerAction.scopeName, {
+      width: activePointerAction.initial.width + delta.width,
+      height: activePointerAction.initial.height + delta.height,
+    })
+  }
+
+  recomputeInteractiveLayout()
+  renderGraph()
+  updateDebugState()
+}
+
+function handlePointerUp() {
+  if (activePointerAction?.moved) {
+    queueMicrotask(() => {
+      suppressNextBlockClick = false
+    })
+  }
+  finishPointerAction()
+}
+
+function startBlockDrag(event, blockId) {
+  const current = appState.blockOffsets.get(blockId) ?? { x: 0, y: 0 }
+  activePointerAction = {
+    type: "drag-block",
+    blockId,
+    start: getPointerPosition(event),
+    initial: { ...current },
+    moved: false,
+  }
+  window.addEventListener("pointermove", handlePointerMove)
+  window.addEventListener("pointerup", handlePointerUp)
+  window.addEventListener("pointercancel", handlePointerUp)
+  window.addEventListener("mousemove", handlePointerMove)
+  window.addEventListener("mouseup", handlePointerUp)
+}
+
+function startScopeResize(event, scopeName) {
+  const current = appState.scopeSizeAdjustments.get(scopeName) ?? { width: 0, height: 0 }
+  activePointerAction = {
+    type: "resize-scope",
+    scopeName,
+    start: getPointerPosition(event),
+    initial: { ...current },
+    moved: true,
+  }
+  window.addEventListener("pointermove", handlePointerMove)
+  window.addEventListener("pointerup", handlePointerUp)
+  window.addEventListener("pointercancel", handlePointerUp)
+  window.addEventListener("mousemove", handlePointerMove)
+  window.addEventListener("mouseup", handlePointerUp)
 }
 
 function summarizeGraph(raw, normalized) {
@@ -887,21 +1017,39 @@ function renderGraph() {
     rx: 28,
     class: "stage-frame",
   })
+  stageFrame.addEventListener("click", () => {
+    if (appState.selectedEdgeId !== null) {
+      appState.selectedEdgeId = null
+      renderGraph()
+      updateDebugState()
+    }
+  })
 
   for (const route of appState.layout.edgeRoutes) {
+    const isSelected = route.edgeId === appState.selectedEdgeId
     const path = createSvgElement("path", {
-      d: buildPolylinePath(route.points),
-      class: "graph-edge",
+      d: buildCurvedPath(route.points),
+      class: `graph-edge${isSelected ? " is-selected" : ""}`,
+      "data-edge-id": route.edgeId,
+    })
+    path.addEventListener("click", (event) => {
+      event.stopPropagation()
+      selectEdge(route.edgeId)
     })
     edgeLayer.append(path)
 
     const arrowHead = createSvgElement("path", {
       d: buildArrowHead(route.points),
-      class: "graph-edge-head",
+      class: `graph-edge-head${isSelected ? " is-selected" : ""}`,
+      "data-edge-id": route.edgeId,
+    })
+    arrowHead.addEventListener("click", (event) => {
+      event.stopPropagation()
+      selectEdge(route.edgeId)
     })
     edgeLayer.append(arrowHead)
 
-    if (route.label) {
+    if (route.label && isSelected) {
       const labelPosition = computeEdgeLabelPosition(route)
       const label = createSvgElement("text", {
         x: labelPosition.x,
@@ -926,6 +1074,29 @@ function renderGraph() {
         class: "scope-rect",
       }),
     )
+
+    const resizeHandle = createSvgElement("rect", {
+      x: rect.x + rect.width - 14,
+      y: rect.y + rect.height - 14,
+      width: 14,
+      height: 14,
+      rx: 4,
+      class: "scope-resize-handle",
+      role: "button",
+      tabindex: 0,
+      "aria-label": `Resize scope ${scopeName}`,
+    })
+    resizeHandle.addEventListener("pointerdown", (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      startScopeResize(event, scopeName)
+    })
+    resizeHandle.addEventListener("mousedown", (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      startScopeResize(event, scopeName)
+    })
+    scopeLayer.append(resizeHandle)
 
     const label = createSvgElement("text", {
       x: rect.x + SCOPE_PAD,
@@ -958,7 +1129,25 @@ function renderGraph() {
       "aria-pressed": isSelected ? "true" : "false",
     })
     group.addEventListener("click", () => {
+      if (suppressNextBlockClick) {
+        return
+      }
       selectBlock(blockNode.id)
+    })
+    group.addEventListener("pointerdown", (event) => {
+      if (event.target instanceof SVGElement && event.target.closest('.scope-resize-handle')) {
+        return
+      }
+      if (event.button !== 0) {
+        return
+      }
+      startBlockDrag(event, blockNode.id)
+    })
+    group.addEventListener("mousedown", (event) => {
+      if (event.button !== 0) {
+        return
+      }
+      startBlockDrag(event, blockNode.id)
     })
     group.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
@@ -1035,10 +1224,14 @@ function updateDebugState() {
     source: appState.source,
     rawGraph: appState.rawGraph,
     normalizedGraph: appState.normalizedGraph,
+    baseLayout: appState.baseLayout,
     layout: appState.layout,
     selectedBlockId: appState.selectedBlockId,
+    selectedEdgeId: appState.selectedEdgeId,
     targetSignal: appState.targetSignal,
     targetDriverBlockId: appState.targetDriverBlockId,
+    blockOffsets: Array.from(appState.blockOffsets.entries()),
+    scopeSizeAdjustments: Array.from(appState.scopeSizeAdjustments.entries()),
     debugVisible: appState.debugVisible,
   }
 }
@@ -1059,16 +1252,19 @@ function parseAndLoad(jsonText, sourceLabel) {
 
     const normalized = normalizeSliceGraph(raw)
     assertNormalizedGraphData(normalized)
-     const layout = computeGraphLayout(normalized)
-     layout.edgeRoutes = computeEdgeRoutes(normalized, layout)
+    const baseLayout = computeGraphLayout(normalized)
 
     appState.rawGraph = raw
     appState.normalizedGraph = normalized
-    appState.layout = layout
+    appState.baseLayout = baseLayout
+    appState.blockOffsets = new Map()
+    appState.scopeSizeAdjustments = new Map()
+    appState.selectedEdgeId = null
     appState.source = sourceLabel
     appState.selectedBlockId = null
     appState.targetSignal = typeof raw.target === "string" && raw.target ? raw.target : null
     appState.targetDriverBlockId = computeTargetDriverBlockId(normalized, appState.targetSignal)
+    recomputeInteractiveLayout()
     resetSelectionPlaceholders()
     renderGraph()
     updateDebugState()
@@ -1077,10 +1273,14 @@ function parseAndLoad(jsonText, sourceLabel) {
     appState.rawGraph = null
     appState.normalizedGraph = null
     appState.source = null
+    appState.baseLayout = null
     appState.layout = null
     appState.selectedBlockId = null
+    appState.selectedEdgeId = null
     appState.targetSignal = null
     appState.targetDriverBlockId = null
+    appState.blockOffsets = new Map()
+    appState.scopeSizeAdjustments = new Map()
     resetSelectionPlaceholders()
     renderGraph()
     updateDebugState()
