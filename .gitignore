@@ -3,3 +3,7 @@ sv-analysis
 sv-analysis/
 *.pdf
 .worktrees/
+.idea/
+target/
+*.json
+*.ast.txt
