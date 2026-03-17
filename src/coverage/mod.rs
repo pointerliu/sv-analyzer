@@ -1,9 +1,13 @@
+pub mod statements;
 pub mod vcd;
 
 use anyhow::Result;
 
 use crate::types::Timestamp;
 
+pub use self::statements::{
+    assignment_statement_coverage_report, StatementCoverageEntry, StatementCoverageReport,
+};
 pub use self::vcd::VcdCoverageTracker;
 
 pub trait CoverageTracker {

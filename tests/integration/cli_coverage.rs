@@ -1,73 +1,105 @@
-use std::fs;
-use std::path::PathBuf;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 
-#[test]
-fn cli_coverage_outputs_json_hit_info() {
-    let fixture = write_trace_coverage_vcd();
+const ASSIGNMENT_LINES: &[usize] = &[
+    25, 27, 32, 36, 38, 41, 44, 47, 55, 56, 60, 61, 62, 65, 66, 67, 70, 71, 74, 75,
+];
 
-    let output = Command::new(env!("CARGO_BIN_EXE_main"))
+#[test]
+fn cli_reports_assignment_statement_coverage_for_demo_wave() {
+    let output_45 = Command::new(env!("CARGO_BIN_EXE_main"))
         .args([
             "coverage",
+            "--sv",
+            "demo/trace_coverage_demo/design.sv",
             "--vcd",
-            fixture.to_str().unwrap(),
-            "--file",
-            "design",
-            "--line",
-            "35",
+            "demo/trace_coverage_demo/logs/sim.vcd",
             "--time",
-            "12",
+            "45",
         ])
         .output()
         .unwrap();
 
     assert!(
-        output.status.success(),
+        output_45.status.success(),
         "stdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        String::from_utf8_lossy(&output_45.stdout),
+        String::from_utf8_lossy(&output_45.stderr)
     );
 
-    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(json["file"], "design");
-    assert_eq!(json["line"], 35);
-    assert_eq!(json["time"], 12);
-    assert_eq!(json["hit_count"], 1);
-    assert_eq!(json["delta_hits"], 1);
-    assert_eq!(json["is_covered"], true);
+    let output_65 = Command::new(env!("CARGO_BIN_EXE_main"))
+        .args([
+            "coverage",
+            "--sv",
+            "demo/trace_coverage_demo/design.sv",
+            "--vcd",
+            "demo/trace_coverage_demo/logs/sim.vcd",
+            "--time",
+            "65",
+        ])
+        .output()
+        .unwrap();
 
-    let _ = fs::remove_file(fixture);
+    assert!(
+        output_65.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output_65.stdout),
+        String::from_utf8_lossy(&output_65.stderr)
+    );
+
+    let json_45: Value = serde_json::from_slice(&output_45.stdout).unwrap();
+    let json_65: Value = serde_json::from_slice(&output_65.stdout).unwrap();
+
+    assert_assignment_lines(&json_45, ASSIGNMENT_LINES);
+    assert_assignment_lines(&json_65, ASSIGNMENT_LINES);
+    assert_covered_lines(&json_45, &[27, 32, 36]);
+    assert_uncovered_lines(
+        &json_45,
+        &[
+            25, 38, 41, 44, 47, 55, 56, 60, 61, 62, 65, 66, 67, 70, 71, 74, 75,
+        ],
+    );
+    assert_covered_lines(&json_65, &[27, 32, 44, 65, 66, 67]);
+    assert_uncovered_lines(
+        &json_65,
+        &[25, 36, 38, 41, 47, 55, 56, 60, 61, 62, 70, 71, 74, 75],
+    );
 }
 
-fn write_trace_coverage_vcd() -> PathBuf {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
+fn assert_assignment_lines(json: &Value, expected: &[usize]) {
+    let mut lines = json["covered"]
+        .as_array()
         .unwrap()
-        .as_nanos();
-    let path = std::env::temp_dir().join(format!(
-        "dac26_task14_cli_coverage_{}_{}.vcd",
-        std::process::id(),
-        unique
-    ));
+        .iter()
+        .chain(json["uncovered"].as_array().unwrap().iter())
+        .map(|entry| entry["line"].as_u64().unwrap() as usize)
+        .collect::<Vec<_>>();
+    lines.sort_unstable();
 
-    fs::write(
-        &path,
-        "$date\n    today\n$end\n\
-$version\n    dac26 task14 coverage\n$end\n\
-$timescale 1ns $end\n\
-$scope module tb $end\n\
-$var wire 32 ! vlCoverageLineTrace_design__35_stmt [31:0] $end\n\
-$upscope $end\n\
-$enddefinitions $end\n\
-#0\n\
-b0 !\n\
-#12\n\
-b1 !\n",
-    )
-    .unwrap();
+    assert_eq!(lines, expected);
+}
 
-    path
+fn assert_covered_lines(json: &Value, expected: &[usize]) {
+    let mut lines = json["covered"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["line"].as_u64().unwrap() as usize)
+        .collect::<Vec<_>>();
+    lines.sort_unstable();
+
+    assert_eq!(lines, expected);
+}
+
+fn assert_uncovered_lines(json: &Value, expected: &[usize]) {
+    let mut lines = json["uncovered"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["line"].as_u64().unwrap() as usize)
+        .collect::<Vec<_>>();
+    lines.sort_unstable();
+
+    assert_eq!(lines, expected);
 }

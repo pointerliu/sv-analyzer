@@ -31,6 +31,10 @@ impl WellenReader {
             time_table,
         })
     }
+
+    pub fn signal_names(&self) -> impl Iterator<Item = &str> {
+        self.signal_lookup.keys().map(String::as_str)
+    }
 }
 
 impl WaveformReader for WellenReader {

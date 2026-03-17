@@ -2,8 +2,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use dac26_mcp::ast::{AstProvider, SvParserProvider};
+use dac26_mcp::block::{Block, BlockType, Blockizer, CircuitType, DataflowBlockizer};
+use dac26_mcp::coverage::{CoverageTracker, VcdCoverageTracker};
 use dac26_mcp::types::{SignalNode, Timestamp};
 use dac26_mcp::wave::{WaveformReader, WellenReader};
+
+fn demo_design_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("demo/trace_coverage_demo/design.sv")
+}
 
 fn demo_vcd_path() -> PathBuf {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -141,6 +148,118 @@ fn reads_signal_value_from_demo_vcd_by_hierarchical_name() {
 }
 
 #[test]
+fn state_register_block_marks_else_but_not_reset_branch_at_time_45() {
+    let block = demo_trace_block(|block| {
+        matches!(block.block_type(), BlockType::Always)
+            && matches!(block.circuit_type(), CircuitType::Sequential)
+            && block.line_start() == 23
+            && block.line_end() == 28
+            && block
+                .output_signals()
+                .iter()
+                .any(|signal| signal.name == "state")
+    });
+    let tracker = VcdCoverageTracker::open(demo_vcd_path()).unwrap();
+    let wave = WellenReader::open(demo_vcd_path()).unwrap();
+    let time = Timestamp(45);
+
+    assert!(tracker
+        .is_line_covered_at(block_file_key(&block), block.line_start(), time)
+        .unwrap());
+    assert!(!tracker.is_line_covered_at("design", 25, time).unwrap());
+    assert!(!tracker.is_line_covered_at("design", 27, time).unwrap());
+    assert_eq!(
+        counter_delta_at(&wave, "tb.dut.vlCoverageLineTrace_design__24_if", time),
+        0
+    );
+    assert_eq!(
+        counter_delta_at(&wave, "tb.dut.vlCoverageLineTrace_design__24_else", time),
+        1
+    );
+}
+
+#[test]
+fn next_state_block_marks_idle_if_but_not_else_at_time_45() {
+    let block = demo_trace_block(|block| {
+        matches!(block.block_type(), BlockType::Always)
+            && matches!(block.circuit_type(), CircuitType::Combinational)
+            && block.line_start() == 31
+            && block.line_end() == 50
+            && block
+                .output_signals()
+                .iter()
+                .any(|signal| signal.name == "next_state")
+    });
+    let tracker = VcdCoverageTracker::open(demo_vcd_path()).unwrap();
+    let wave = WellenReader::open(demo_vcd_path()).unwrap();
+    let time = Timestamp(45);
+
+    assert_eq!(block.line_start(), 31);
+    assert!(tracker.is_line_covered_at("design", 34, time).unwrap());
+    assert!(tracker.is_line_covered_at("design", 35, time).unwrap());
+    assert!(!tracker.is_line_covered_at("design", 38, time).unwrap());
+    assert_eq!(
+        counter_delta_at(&wave, "tb.dut.vlCoverageLineTrace_design__34_case", time),
+        1
+    );
+    assert_eq!(
+        counter_delta_at(&wave, "tb.dut.vlCoverageLineTrace_design__35_if", time),
+        1
+    );
+    assert_eq!(
+        counter_delta_at(&wave, "tb.dut.vlCoverageLineTrace_design__35_else", time),
+        0
+    );
+}
+
+#[test]
+fn alu_exec_case_is_not_covered_at_time_45() {
+    let block = demo_trace_block(|block| {
+        matches!(block.block_type(), BlockType::Always)
+            && matches!(block.circuit_type(), CircuitType::Sequential)
+            && block.line_start() == 53
+            && block.line_end() == 79
+            && block
+                .output_signals()
+                .iter()
+                .any(|signal| signal.name == "result")
+    });
+    let tracker = VcdCoverageTracker::open(demo_vcd_path()).unwrap();
+    let wave = WellenReader::open(demo_vcd_path()).unwrap();
+    let time = Timestamp(45);
+
+    assert!(tracker
+        .is_line_covered_at(block_file_key(&block), block.line_start(), time)
+        .unwrap());
+    assert!(!tracker.is_line_covered_at("design", 54, time).unwrap());
+    assert!(tracker.is_line_covered_at("design", 57, time).unwrap());
+    assert_eq!(
+        counter_delta_at(&wave, "tb.dut.vlCoverageLineTrace_design__57_if", time),
+        0
+    );
+    assert_eq!(
+        counter_delta_at(&wave, "tb.dut.vlCoverageLineTrace_design__57_else", time),
+        1
+    );
+    assert_eq!(
+        counter_delta_at(&wave, "tb.dut.vlCoverageLineTrace_design__59_case", time),
+        0
+    );
+    assert_eq!(
+        counter_delta_at(&wave, "tb.dut.vlCoverageLineTrace_design__64_case", time),
+        0
+    );
+    assert_eq!(
+        counter_delta_at(&wave, "tb.dut.vlCoverageLineTrace_design__69_case", time),
+        0
+    );
+    assert_eq!(
+        counter_delta_at(&wave, "tb.dut.vlCoverageLineTrace_design__73_case", time),
+        0
+    );
+}
+
+#[test]
 fn rejects_ambiguous_single_root_aliases() {
     let path = write_collision_fixture_vcd();
     let wave = WellenReader::open(&path).unwrap();
@@ -214,4 +333,44 @@ b{wide_bits} !\n"
     assert_eq!(value.pretty_hex.as_deref(), Some(expected_hex.as_str()));
 
     fs::remove_file(path).unwrap();
+}
+
+fn demo_trace_block(predicate: impl Fn(&Block) -> bool) -> Block {
+    let parsed = SvParserProvider.parse_files(&[demo_design_path()]).unwrap();
+
+    DataflowBlockizer
+        .blockize(&parsed)
+        .unwrap()
+        .blocks()
+        .iter()
+        .find(|block| predicate(block))
+        .cloned()
+        .unwrap()
+}
+
+fn block_file_key(block: &Block) -> &str {
+    Path::new(block.source_file())
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap()
+}
+
+fn counter_delta_at(wave: &WellenReader, signal: &str, time: Timestamp) -> u64 {
+    let current = counter_at(wave, signal, time);
+    let previous = if time.0 == 0 {
+        0
+    } else {
+        counter_at(wave, signal, Timestamp(time.0 - 1))
+    };
+
+    current.saturating_sub(previous)
+}
+
+fn counter_at(wave: &WellenReader, signal: &str, time: Timestamp) -> u64 {
+    let value = wave
+        .signal_value_at(&SignalNode::named(signal), time)
+        .unwrap()
+        .unwrap();
+
+    u64::from_str_radix(&value.raw_bits, 2).unwrap()
 }

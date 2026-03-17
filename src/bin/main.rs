@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use dac26_mcp::ast::{AstProvider, SvParserProvider};
 use dac26_mcp::block::{elaborate_block_set, Blockizer, DataflowBlockizer};
-use dac26_mcp::coverage::{CoverageTracker, VcdCoverageTracker};
+use dac26_mcp::coverage::{assignment_statement_coverage_report, VcdCoverageTracker};
 use dac26_mcp::slicer::{BluesSlicer, SliceRequest, Slicer, StaticSlicer};
 use dac26_mcp::types::{SignalNode, Timestamp};
 use dac26_mcp::wave::{WaveformReader, WellenReader};
@@ -36,18 +36,12 @@ struct BlockizeArgs {
 
 #[derive(Debug, Args)]
 struct CoverageArgs {
+    #[arg(long = "sv", required = true)]
+    sv_files: Vec<PathBuf>,
     #[arg(long)]
     vcd: PathBuf,
     #[arg(long)]
-    file: String,
-    #[arg(long)]
-    line: usize,
-    #[arg(long)]
     time: i64,
-    #[arg(long)]
-    clock_signal: Option<String>,
-    #[arg(long)]
-    clk_step: Option<i64>,
 }
 
 #[derive(Debug, Args)]
@@ -74,16 +68,6 @@ struct WaveArgs {
     signal: String,
     #[arg(long)]
     time: i64,
-}
-
-#[derive(Debug, Serialize)]
-struct CoverageOutput {
-    file: String,
-    line: usize,
-    time: i64,
-    hit_count: u64,
-    delta_hits: u64,
-    is_covered: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -118,26 +102,12 @@ fn run_blockize(args: BlockizeArgs) -> Result<()> {
 }
 
 fn run_coverage(args: CoverageArgs) -> Result<()> {
-    let tracker = match (&args.clock_signal, args.clk_step) {
-        (Some(clock_signal), Some(clk_step)) => {
-            VcdCoverageTracker::open_with_clock(&args.vcd, clock_signal, clk_step)?
-        }
-        (None, None) => VcdCoverageTracker::open(&args.vcd)?,
-        (Some(_), None) => anyhow::bail!("--clk-step is required when --clock-signal is set"),
-        (None, Some(_)) => anyhow::bail!("--clock-signal is required when --clk-step is set"),
-    };
+    let parsed_files = SvParserProvider.parse_files(&args.sv_files)?;
+    let waveform = WellenReader::open(&args.vcd)?;
+    let report =
+        assignment_statement_coverage_report(&parsed_files, &waveform, Timestamp(args.time))?;
 
-    let time = Timestamp(args.time);
-    let output = CoverageOutput {
-        file: args.file.clone(),
-        line: args.line,
-        time: args.time,
-        hit_count: tracker.hit_count_at(&args.file, args.line, time)?,
-        delta_hits: tracker.delta_hits(&args.file, args.line, time)?,
-        is_covered: tracker.is_line_covered_at(&args.file, args.line, time)?,
-    };
-
-    println!("{}", serde_json::to_string_pretty(&output)?);
+    println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
 }
 
