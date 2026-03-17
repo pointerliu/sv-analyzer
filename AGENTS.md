@@ -5,6 +5,7 @@ This file is for agentic coding agents working in this repository.
 ## Hard rule
 
 - DO NOT modify or create files anywhere under `sv-analysis/`.
+- DO NOT use text string to identity ast elements, use the AST elements in `sv-parser`
 
 ## Project snapshot
 
