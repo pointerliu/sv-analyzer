@@ -106,6 +106,89 @@ fn cli_slice_dynamic_supports_scoped_signal_queries() {
 }
 
 #[test]
+fn cli_slice_fails_for_non_posedge_time() {
+    let fixture = write_slice_fixture();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_main"))
+        .args([
+            "slice",
+            "--sv",
+            fixture.design.to_str().unwrap(),
+            "--sv",
+            fixture.testbench.to_str().unwrap(),
+            "--vcd",
+            fixture.vcd.to_str().unwrap(),
+            "--signal",
+            "result",
+            "--time",
+            "2",
+            "--min-time",
+            "0",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success(), "should fail for non-posedge time");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("validation failed"),
+        "error should mention validation failure: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("not a valid posedge time"),
+        "error should mention posedge time: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    fixture.cleanup();
+}
+
+#[test]
+fn cli_slice_fails_for_misaligned_backtrack_with_explicit_clock() {
+    let fixture = write_slice_fixture();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_main"))
+        .args([
+            "slice",
+            "--sv",
+            fixture.design.to_str().unwrap(),
+            "--sv",
+            fixture.testbench.to_str().unwrap(),
+            "--vcd",
+            fixture.vcd.to_str().unwrap(),
+            "--signal",
+            "result",
+            "--time",
+            "2",
+            "--min-time",
+            "0",
+            "--clock",
+            "tb.dut.clk",
+            "--clk-step",
+            "2",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        !output.status.success(),
+        "should fail for non-posedge time with explicit clock"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("validation failed"),
+        "error should mention validation failure: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("not a valid posedge time"),
+        "error should mention posedge time: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    fixture.cleanup();
+}
+
+#[test]
 fn cli_slice_supports_static_graph_output() {
     let fixture = write_slice_fixture();
 
@@ -497,11 +580,21 @@ $enddefinitions $end\n\
 0%\n\
 b0 &\n\
 #1\n\
+1#\n\
 1!\n\
 1\"\n\
 1%\n\
 b1 &\n\
-1$\n",
+#2\n\
+1$\n\
+0#\n\
+#3\n\
+1#\n\
+#4\n\
+0#\n\
+#5\n\
+1#\n\
+",
     )
     .unwrap();
 

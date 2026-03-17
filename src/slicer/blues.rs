@@ -110,7 +110,8 @@ impl BluesSlicer {
                         }
                     }
                     CircuitType::Sequential => {
-                        let previous_time = Timestamp(time.0 - 1);
+                        let clk_period = self.coverage.clock_period().unwrap_or(1);
+                        let previous_time = Timestamp(time.0 - clk_period);
                         if previous_time.0 < request.min_time.0 {
                             continue;
                         }

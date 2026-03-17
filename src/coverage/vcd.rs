@@ -15,6 +15,10 @@ pub struct VcdCoverageTracker {
     annotation_query_times: Vec<i64>,
     annotation_sample_times: Vec<i64>,
     traces_by_line: HashMap<(String, usize), Vec<CoverageTrace>>,
+    clock_period: Option<i64>,
+    #[allow(dead_code)]
+    clock_signal_ref: Option<SignalRef>,
+    rising_edges: Vec<i64>,
 }
 
 #[derive(Debug)]
@@ -57,12 +61,23 @@ impl VcdCoverageTracker {
             .iter()
             .map(|descriptor| descriptor.signal_ref)
             .collect();
-        let clock_signal_ref = clock_signal
-            .map(|(signal, _)| lookup_signal_ref(waveform.hierarchy(), signal))
-            .transpose()?;
-        if let Some(signal_ref) = clock_signal_ref {
-            signal_refs.push(signal_ref);
-        }
+
+        let (clock_signal_ref, clock_period) = match clock_signal {
+            Some((clock_name, clk_step)) => {
+                if clk_step <= 0 {
+                    return Err(anyhow!("clk_step must be positive, got {clk_step}"));
+                }
+                let ref_opt = lookup_signal_ref(waveform.hierarchy(), clock_name)?;
+                if let Some(signal_ref) = ref_opt {
+                    signal_refs.push(signal_ref);
+                }
+                (ref_opt, Some(clk_step))
+            }
+            None => {
+                let auto_detected = auto_detect_clock(&mut waveform, &mut signal_refs)?;
+                (auto_detected.signal_ref, auto_detected.period)
+            }
+        };
         waveform.load_signals(&signal_refs);
 
         let raw_times = waveform
@@ -72,19 +87,20 @@ impl VcdCoverageTracker {
                 i64::try_from(*time).map_err(|_| anyhow!("waveform time exceeds i64 range: {time}"))
             })
             .collect::<Result<Vec<_>>>()?;
-        let (annotation_query_times, annotation_sample_times) =
-            match (clock_signal_ref, clock_signal) {
-                (Some(signal_ref), Some((clock_name, clk_step))) => {
-                    if clk_step <= 0 {
-                        return Err(anyhow!("clk_step must be positive, got {clk_step}"));
-                    }
+
+        let (annotation_query_times, annotation_sample_times, rising_edges) =
+            match (clock_signal_ref, clock_period) {
+                (Some(signal_ref), Some(clk_step)) => {
                     let signal = waveform
                         .get_signal(signal_ref)
-                        .ok_or_else(|| anyhow!("clock signal data not loaded for {clock_name}"))?;
-                    build_annotation_timeline(signal, &raw_times, clk_step)?
+                        .ok_or_else(|| anyhow!("clock signal data not loaded"))?;
+                    let rising = collect_rising_edges(signal, &raw_times)?;
+                    let (query_times, sample_times) =
+                        build_annotation_timeline(signal, &raw_times, clk_step)?;
+                    (query_times, sample_times, rising)
                 }
                 (Some(_), None) => unreachable!(),
-                (None, None) => (raw_times.clone(), raw_times.clone()),
+                (None, None) => (raw_times.clone(), raw_times.clone(), vec![]),
                 (None, Some(_)) => unreachable!(),
             };
 
@@ -109,6 +125,9 @@ impl VcdCoverageTracker {
             annotation_query_times,
             annotation_sample_times,
             traces_by_line,
+            clock_period,
+            clock_signal_ref,
+            rising_edges,
         })
     }
 
@@ -167,6 +186,14 @@ impl CoverageTracker for VcdCoverageTracker {
 
         Ok(current.saturating_sub(previous))
     }
+
+    fn clock_period(&self) -> Option<i64> {
+        self.clock_period
+    }
+
+    fn is_posedge_time(&self, time: i64) -> bool {
+        self.rising_edges.binary_search(&time).is_ok()
+    }
 }
 
 impl CoverageTrace {
@@ -200,13 +227,136 @@ fn collect_trace_descriptors(waveform: &Waveform) -> Vec<TraceDescriptor> {
         .collect()
 }
 
-fn lookup_signal_ref(hierarchy: &Hierarchy, signal: &str) -> Result<SignalRef> {
+fn lookup_signal_ref(hierarchy: &Hierarchy, signal: &str) -> Result<Option<SignalRef>> {
     let lookup = build_signal_lookup(hierarchy);
     match lookup.get(signal) {
-        Some(Some(signal_ref)) => Ok(*signal_ref),
+        Some(Some(signal_ref)) => Ok(Some(*signal_ref)),
         Some(None) => Err(anyhow!("clock signal lookup is ambiguous for {signal}")),
         None => Err(anyhow!("clock signal not found: {signal}")),
     }
+}
+
+struct AutoDetectResult {
+    signal_ref: Option<SignalRef>,
+    period: Option<i64>,
+}
+
+fn auto_detect_clock(
+    waveform: &mut simple::Waveform,
+    signal_refs: &mut Vec<SignalRef>,
+) -> Result<AutoDetectResult> {
+    let hierarchy = waveform.hierarchy();
+    let all_vars: Vec<_> = hierarchy.iter_vars().collect();
+
+    let clk_candidates: Vec<_> = all_vars
+        .iter()
+        .filter_map(|var| {
+            let full_name = var.full_name(hierarchy);
+            let base_name = full_name.rsplit('.').next().unwrap_or(full_name.as_str());
+            let name_lower = base_name.to_lowercase();
+            if name_lower.contains("clk") {
+                Some((var.signal_ref(), full_name.clone(), base_name.to_string()))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if clk_candidates.is_empty() {
+        return Err(anyhow!(
+            "auto-detect failed: no clock signal found (no signal containing 'clk' in name)"
+        ));
+    }
+
+    for (signal_ref, _full_name, _base_name) in &clk_candidates {
+        signal_refs.push(*signal_ref);
+    }
+
+    waveform.load_signals(signal_refs);
+
+    let raw_times: Vec<i64> = waveform.time_table().iter().map(|t| *t as i64).collect();
+
+    for (signal_ref, _full_name, _base_name) in &clk_candidates {
+        let signal = match waveform.get_signal(*signal_ref) {
+            Some(s) => s,
+            None => continue,
+        };
+
+        if let Some(period) = detect_clock_period(signal, &raw_times) {
+            return Ok(AutoDetectResult {
+                signal_ref: Some(*signal_ref),
+                period: Some(period),
+            });
+        }
+    }
+
+    let clk_names: Vec<_> = clk_candidates
+        .iter()
+        .map(|(_, _, name)| name.as_str())
+        .collect();
+    Err(anyhow!(
+        "auto-detect failed: found clock candidates {:?} but none have constant period between rising edges",
+        clk_names
+    ))
+}
+
+fn detect_clock_period(signal: &wellen::Signal, raw_times: &[i64]) -> Option<i64> {
+    let mut rising_times: Vec<i64> = Vec::new();
+    let mut previous_bit: Option<char> = None;
+
+    for (time_idx, value) in signal.iter_changes() {
+        let time = *raw_times.get(time_idx as usize)?;
+        let bits = value.to_bit_string()?;
+        let current_bit = bits.chars().next()?;
+
+        if matches!((previous_bit, current_bit), (Some('0'), '1')) {
+            rising_times.push(time);
+        }
+        previous_bit = Some(current_bit);
+    }
+
+    if rising_times.len() < 2 {
+        return None;
+    }
+
+    let first_interval = rising_times[1] - rising_times[0];
+    if first_interval <= 0 {
+        return None;
+    }
+
+    for window in rising_times.windows(2) {
+        let interval = window[1] - window[0];
+        if interval != first_interval {
+            return None;
+        }
+    }
+
+    Some(first_interval)
+}
+
+fn collect_rising_edges(signal: &wellen::Signal, raw_times: &[i64]) -> Result<Vec<i64>> {
+    let mut rising_times: Vec<i64> = Vec::new();
+    let mut previous_bit: Option<char> = None;
+
+    for (time_idx, value) in signal.iter_changes() {
+        let time = *raw_times
+            .get(time_idx as usize)
+            .ok_or_else(|| anyhow!("time index {} missing from waveform", time_idx))?;
+        let bits = value
+            .to_bit_string()
+            .ok_or_else(|| anyhow!("signal value at time {} is not bit string", time))?;
+        let current_bit = bits
+            .chars()
+            .next()
+            .ok_or_else(|| anyhow!("signal at time {} has no bits", time))?;
+
+        if matches!((previous_bit, current_bit), (Some('0'), '1')) {
+            rising_times.push(time);
+        }
+        previous_bit = Some(current_bit);
+    }
+
+    Ok(rising_times)
 }
 
 fn build_signal_lookup(hierarchy: &Hierarchy) -> HashMap<String, Option<SignalRef>> {

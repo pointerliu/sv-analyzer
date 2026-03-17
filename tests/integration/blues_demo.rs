@@ -305,6 +305,14 @@ impl CoverageTracker for FixtureCoverage {
     fn delta_hits(&self, file: &str, line: usize, time: Timestamp) -> Result<u64> {
         self.hit_count_at(file, line, time)
     }
+
+    fn clock_period(&self) -> Option<i64> {
+        Some(1)
+    }
+
+    fn is_posedge_time(&self, _time: i64) -> bool {
+        true
+    }
 }
 
 fn entry(output: &str, inputs: &[&str]) -> DataflowEntry {

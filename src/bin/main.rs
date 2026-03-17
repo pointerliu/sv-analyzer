@@ -4,7 +4,9 @@ use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use dac26_mcp::ast::{AstProvider, SvParserProvider};
 use dac26_mcp::block::{elaborate_block_set, Blockizer, DataflowBlockizer};
-use dac26_mcp::coverage::{assignment_statement_coverage_report, VcdCoverageTracker};
+use dac26_mcp::coverage::{
+    assignment_statement_coverage_report, CoverageTracker, VcdCoverageTracker,
+};
 use dac26_mcp::slicer::{BluesSlicer, SliceRequest, Slicer, StaticSlicer};
 use dac26_mcp::types::{SignalNode, Timestamp};
 use dac26_mcp::wave::{WaveformReader, WellenReader};
@@ -58,6 +60,10 @@ struct SliceArgs {
     min_time: Option<i64>,
     #[arg(long = "static", default_value_t = false)]
     static_slice: bool,
+    #[arg(long)]
+    clock: Option<String>,
+    #[arg(long)]
+    clk_step: Option<i64>,
 }
 
 #[derive(Debug, Args)]
@@ -113,21 +119,29 @@ fn run_coverage(args: CoverageArgs) -> Result<()> {
 
 fn run_slice(args: SliceArgs) -> Result<()> {
     if args.static_slice {
-        let parsed_files = SvParserProvider.parse_files(&args.sv_files)?;
-        let block_set =
-            elaborate_block_set(&parsed_files, &DataflowBlockizer.blockize(&parsed_files)?)?;
-        let request = SliceRequest {
-            signal: SignalNode::named(args.signal),
-            time: Timestamp(0),
-            min_time: Timestamp(0),
-        };
-
-        let stable_json =
-            Slicer::slice(&StaticSlicer::new(block_set), &request)?.stable_json_graph()?;
-        println!("{}", serde_json::to_string_pretty(&stable_json)?);
-        return Ok(());
+        return run_static_slice(args);
+    } else {
+        return run_blues(args);
     }
+}
 
+fn run_static_slice(args: SliceArgs) -> Result<()> {
+    let parsed_files = SvParserProvider.parse_files(&args.sv_files)?;
+    let block_set =
+        elaborate_block_set(&parsed_files, &DataflowBlockizer.blockize(&parsed_files)?)?;
+    let request = SliceRequest {
+        signal: SignalNode::named(args.signal),
+        time: Timestamp(0),
+        min_time: Timestamp(0),
+    };
+
+    let stable_json =
+        Slicer::slice(&StaticSlicer::new(block_set), &request)?.stable_json_graph()?;
+    println!("{}", serde_json::to_string_pretty(&stable_json)?);
+    Ok(())
+}
+
+fn run_blues(args: SliceArgs) -> Result<()> {
     let parsed_files = SvParserProvider.parse_files(&args.sv_files)?;
     let block_set =
         elaborate_block_set(&parsed_files, &DataflowBlockizer.blockize(&parsed_files)?)?;
@@ -141,8 +155,38 @@ fn run_slice(args: SliceArgs) -> Result<()> {
     let min_time = args
         .min_time
         .ok_or_else(|| anyhow::anyhow!("--min-time is required unless --static is set"))?;
-    let _waveform_reader = WellenReader::open(vcd)?;
-    let coverage = Arc::new(VcdCoverageTracker::open(vcd)?);
+
+    let coverage = match (&args.clock, args.clk_step) {
+        (Some(clock_name), Some(clk_step)) => Arc::new(VcdCoverageTracker::open_with_clock(
+            vcd, clock_name, clk_step,
+        )?),
+        (None, None) => Arc::new(VcdCoverageTracker::open(vcd)?),
+        _ => {
+            return Err(anyhow::anyhow!(
+                "both --clock and --clk-step must be provided together"
+            ))
+        }
+    };
+
+    if !coverage.is_posedge_time(time) {
+        return Err(anyhow::anyhow!(
+            "validation failed: --time {} is not a valid posedge time",
+            time
+        ));
+    }
+
+    if let Some(clk_period) = coverage.clock_period() {
+        let prev_time = time - clk_period;
+        if prev_time >= min_time && !coverage.is_posedge_time(prev_time) {
+            return Err(anyhow::anyhow!(
+                "validation failed: time {} - clock period {} = {} is not a valid posedge time",
+                time,
+                clk_period,
+                prev_time
+            ));
+        }
+    }
+
     let request = SliceRequest {
         signal: SignalNode::named(args.signal),
         time: Timestamp(time),
