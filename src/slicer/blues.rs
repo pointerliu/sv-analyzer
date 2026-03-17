@@ -39,6 +39,15 @@ impl BluesSlicer {
     }
 
     pub fn slice(&self, request: &SliceRequest) -> Result<InstructionExecutionPath> {
+        // Verify the signal exists in the block set
+        if self.block_set.drivers_for(&request.signal).is_empty() {
+            let signal_name = request.signal.as_str();
+            anyhow::bail!(
+                "signal '{}' not found in block set. Provide hierarchical name (e.g., 'TOP.module.signal')",
+                signal_name
+            );
+        }
+
         let mut work = VecDeque::from([(request.signal.clone(), request.time)]);
         let mut queued = HashSet::from([(request.signal.clone(), request.time.0)]);
         let mut visited_signals = HashSet::new();

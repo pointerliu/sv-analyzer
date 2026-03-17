@@ -32,6 +32,10 @@ fn instruction_execution_path_serializes_as_stable_json_graph() {
             id: BlockId(17),
             scope: "tb.dut".into(),
             block_type: "Always".into(),
+            source_file: "design.sv".into(),
+            line_start: 10,
+            line_end: 20,
+            code_snippet: "always_ff @(posedge clk) result <= tmp;".into(),
         }],
     };
 
@@ -73,7 +77,11 @@ fn instruction_execution_path_serializes_as_stable_json_graph() {
                 {
                     "id": 17,
                     "scope": "tb.dut",
-                    "block_type": "Always"
+                    "block_type": "Always",
+                    "source_file": "design.sv",
+                    "line_start": 10,
+                    "line_end": 20,
+                    "code_snippet": "always_ff @(posedge clk) result <= tmp;"
                 }
             ]
         })
@@ -92,6 +100,10 @@ fn static_slice_graph_serializes_without_time_annotations() {
             id: BlockId(5),
             scope: "tb.dut".into(),
             block_type: "Assign".into(),
+            source_file: "design.sv".into(),
+            line_start: 5,
+            line_end: 5,
+            code_snippet: "assign result = a & b;".into(),
         }],
     };
 
@@ -112,7 +124,11 @@ fn static_slice_graph_serializes_without_time_annotations() {
                 {
                     "id": 5,
                     "scope": "tb.dut",
-                    "block_type": "Assign"
+                    "block_type": "Assign",
+                    "source_file": "design.sv",
+                    "line_start": 5,
+                    "line_end": 5,
+                    "code_snippet": "assign result = a & b;"
                 }
             ]
         })

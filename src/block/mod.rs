@@ -68,6 +68,10 @@ impl BlockSet {
         &self.blocks
     }
 
+    pub fn signal_to_drivers(&self) -> &HashMap<SignalNode, Vec<BlockId>> {
+        &self.signal_to_drivers
+    }
+
     pub fn drivers_for(&self, signal: &SignalNode) -> &[BlockId] {
         self.signal_to_drivers
             .get(signal)

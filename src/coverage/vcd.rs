@@ -478,5 +478,11 @@ fn parse_single_bit(bits: &str) -> Result<char> {
 }
 
 fn normalize_file_key(file: &str) -> String {
-    file.replace('\\', "/")
+    let normalized = file.replace('\\', "/");
+    let basename = normalized.rsplit('/').next().unwrap_or(&normalized);
+    basename
+        .strip_suffix(".sv")
+        .or_else(|| basename.strip_suffix(".v"))
+        .unwrap_or(basename)
+        .to_string()
 }

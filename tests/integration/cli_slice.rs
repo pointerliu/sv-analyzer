@@ -20,7 +20,7 @@ fn cli_slice_outputs_graph_json_with_blues_by_default() {
             "--vcd",
             fixture.vcd.to_str().unwrap(),
             "--signal",
-            "result",
+            "TOP.tb.dut.result",
             "--time",
             "1",
             "--min-time",
@@ -119,7 +119,7 @@ fn cli_slice_fails_for_non_posedge_time() {
             "--vcd",
             fixture.vcd.to_str().unwrap(),
             "--signal",
-            "result",
+            "TOP.tb.dut.result",
             "--time",
             "2",
             "--min-time",
@@ -157,7 +157,7 @@ fn cli_slice_fails_for_misaligned_backtrack_with_explicit_clock() {
             "--vcd",
             fixture.vcd.to_str().unwrap(),
             "--signal",
-            "result",
+            "TOP.tb.dut.result",
             "--time",
             "2",
             "--min-time",
@@ -201,7 +201,7 @@ fn cli_slice_supports_static_graph_output() {
             "--sv",
             fixture.testbench.to_str().unwrap(),
             "--signal",
-            "result",
+            "TOP.tb.dut.result",
         ])
         .output()
         .unwrap();
