@@ -1,0 +1,13 @@
+[package]
+name = "dac26_app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sv-parser = "0.13.4"
+wellen = "0.20.3"
+
+dac26_core = { path = "../core" }

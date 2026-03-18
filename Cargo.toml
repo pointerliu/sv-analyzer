@@ -1,82 +1,9 @@
-[package]
-name = "dac26_mcp"
-version = "0.1.0"
-edition = "2021"
-
-[[bin]]
-name = "main"
-path = "src/bin/main.rs"
-
-[[test]]
-name = "smoke_cli"
-path = "tests/integration/smoke_cli.rs"
-
-[[test]]
-name = "types_json"
-path = "tests/integration/types_json.rs"
-
-[[test]]
-name = "trait_object_compile"
-path = "tests/integration/trait_object_compile.rs"
-
-[[test]]
-name = "parse_demo_sv"
-path = "tests/integration/parse_demo_sv.rs"
-
-[[test]]
-name = "block_models"
-path = "tests/integration/block_models.rs"
-
-[[test]]
-name = "extract_assign_dataflow"
-path = "tests/integration/extract_assign_dataflow.rs"
-
-[[test]]
-name = "blockize_demo_design"
-path = "tests/integration/blockize_demo_design.rs"
-
-[[test]]
-name = "read_demo_wave"
-path = "tests/integration/read_demo_wave.rs"
-
-[[test]]
-name = "read_trace_coverage"
-path = "tests/integration/read_trace_coverage.rs"
-
-[[test]]
-name = "static_slice_demo"
-path = "tests/integration/static_slice_demo.rs"
-
-[[test]]
-name = "blues_demo"
-path = "tests/integration/blues_demo.rs"
-
-[[test]]
-name = "slice_json"
-path = "tests/integration/slice_json.rs"
-
-[[test]]
-name = "cli_blockize"
-path = "tests/integration/cli_blockize.rs"
-
-[[test]]
-name = "cli_coverage"
-path = "tests/integration/cli_coverage.rs"
-
-[[test]]
-name = "cli_wave"
-path = "tests/integration/cli_wave.rs"
-
-[[test]]
-name = "cli_slice"
-path = "tests/integration/cli_slice.rs"
-
-[dependencies]
-anyhow = "1"
-clap = { version = "4", features = ["derive"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-sv-parser = "0.13.4"
-wellen = "0.20.3"
-
-[dev-dependencies]
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/app",
+    "crates/cli",
+    "crates/vscode-backend",
+    "crates/mcp",
+]
