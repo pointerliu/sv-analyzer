@@ -1,17 +1,17 @@
+use crate::ast::AstProvider;
 use crate::ast::SvParserProvider;
+use crate::block::Blockizer;
 use crate::block::{elaborate_block_set, BlockSet, DataflowBlockizer};
+use crate::coverage::CoverageTracker;
 use crate::coverage::{
     assignment_statement_coverage_report, StatementCoverageReport, VcdCoverageTracker,
 };
+use crate::slicer::SliceRequest;
 use crate::slicer::{BluesSlicer, StaticSlicer};
+use crate::types::{SignalNode, Timestamp};
+use crate::wave::WaveformReader;
 use crate::wave::WellenReader;
 use anyhow::Result;
-use dac26_core::ast::AstProvider;
-use dac26_core::block::Blockizer;
-use dac26_core::coverage::CoverageTracker;
-use dac26_core::slicer::SliceRequest;
-use dac26_core::types::{SignalNode, Timestamp};
-use dac26_core::wave::WaveformReader;
 use std::sync::Arc;
 
 pub struct BlockizeRequest {
@@ -51,7 +51,7 @@ pub fn blockize(req: BlockizeRequest) -> Result<BlockSet> {
     Ok(block_set)
 }
 
-pub fn slice_static(req: StaticSliceRequest) -> Result<dac26_core::types::StableSliceGraphJson> {
+pub fn slice_static(req: StaticSliceRequest) -> Result<crate::types::StableSliceGraphJson> {
     let parsed_files = SvParserProvider.parse_files(&req.sv_files)?;
     let block_set =
         elaborate_block_set(&parsed_files, &DataflowBlockizer.blockize(&parsed_files)?)?;
@@ -66,7 +66,7 @@ pub fn slice_static(req: StaticSliceRequest) -> Result<dac26_core::types::Stable
     Ok(stable_json)
 }
 
-pub fn slice_dynamic(req: DynamicSliceRequest) -> Result<dac26_core::types::StableSliceGraphJson> {
+pub fn slice_dynamic(req: DynamicSliceRequest) -> Result<crate::types::StableSliceGraphJson> {
     let parsed_files = SvParserProvider.parse_files(&req.sv_files)?;
     let block_set =
         elaborate_block_set(&parsed_files, &DataflowBlockizer.blockize(&parsed_files)?)?;
@@ -118,7 +118,7 @@ pub fn coverage_report(req: CoverageReportRequest) -> Result<StatementCoverageRe
     Ok(report)
 }
 
-pub fn wave_value(req: WaveValueRequest) -> Result<Option<dac26_core::wave::SignalValue>> {
+pub fn wave_value(req: WaveValueRequest) -> Result<Option<crate::wave::SignalValue>> {
     let reader = WellenReader::open(&req.vcd)?;
     let signal = SignalNode::named(req.signal);
     let value = reader.signal_value_at(&signal, Timestamp(req.time))?;

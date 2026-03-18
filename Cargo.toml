@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
     "crates/core",
-    "crates/app",
     "crates/cli",
     "crates/vscode-backend",
     "crates/mcp",

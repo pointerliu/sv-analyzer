@@ -12,3 +12,6 @@ pub struct ParsedFile {
 pub trait AstProvider {
     fn parse_files(&self, paths: &[PathBuf]) -> Result<Vec<ParsedFile>>;
 }
+
+pub mod sv_parser;
+pub use sv_parser::SvParserProvider;

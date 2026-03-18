@@ -8,7 +8,7 @@ name = "dataflow-engine"
 path = "src/main.rs"
 
 [dependencies]
-dac26_app = { path = "../app" }
+dac26_core = { path = "../core" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

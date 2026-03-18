@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use sv_parser::{parse_sv, Defines};
 
-use super::{AstProvider, ParsedFile};
+use crate::ast::{AstProvider, ParsedFile};
 
 #[derive(Debug, Default)]
 pub struct SvParserProvider;

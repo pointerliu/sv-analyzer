@@ -11,3 +11,6 @@ pub struct SignalValue {
 pub trait WaveformReader {
     fn signal_value_at(&self, signal: &SignalNode, time: Timestamp) -> Result<Option<SignalValue>>;
 }
+
+pub mod wellen;
+pub use wellen::WellenReader;

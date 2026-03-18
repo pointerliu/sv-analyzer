@@ -4,9 +4,9 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dac26_app::ast::SvParserProvider;
-use dac26_app::block::DataflowBlockizer;
 use dac26_core::ast::AstProvider;
+use dac26_core::ast::SvParserProvider;
+use dac26_core::block::DataflowBlockizer;
 use dac26_core::block::{BlockType, Blockizer};
 
 fn workspace_root() -> PathBuf {

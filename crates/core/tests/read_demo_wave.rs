@@ -2,29 +2,27 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dac26_mcp::ast::{AstProvider, SvParserProvider};
-use dac26_mcp::block::{Block, BlockType, Blockizer, CircuitType, DataflowBlockizer};
-use dac26_mcp::coverage::{CoverageTracker, VcdCoverageTracker};
-use dac26_mcp::types::{SignalNode, Timestamp};
-use dac26_mcp::wave::{WaveformReader, WellenReader};
+use dac26_core::ast::AstProvider;
+use dac26_core::ast::SvParserProvider;
+use dac26_core::block::DataflowBlockizer;
+use dac26_core::block::{BlockType, Blockizer, CircuitType};
+use dac26_core::coverage::CoverageTracker;
+use dac26_core::coverage::VcdCoverageTracker;
+use dac26_core::types::{SignalNode, Timestamp};
+use dac26_core::wave::WaveformReader;
+use dac26_core::wave::WellenReader;
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+}
 
 fn demo_design_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("demo/trace_coverage_demo/design.sv")
+    workspace_root().join("demo/trace_coverage_demo/design.sv")
 }
 
 fn demo_vcd_path() -> PathBuf {
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let repo_root_candidate = manifest_dir.join("demo/trace_coverage_demo/logs/sim.vcd");
-    if repo_root_candidate.is_file() {
-        return repo_root_candidate;
-    }
-
-    manifest_dir
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("demo/trace_coverage_demo/logs/sim.vcd")
+    let ws_root = workspace_root();
+    ws_root.join("demo/trace_coverage_demo/logs/sim.vcd")
 }
 
 #[test]
@@ -335,7 +333,9 @@ b{wide_bits} !\n"
     fs::remove_file(path).unwrap();
 }
 
-fn demo_trace_block(predicate: impl Fn(&Block) -> bool) -> Block {
+fn demo_trace_block(
+    predicate: impl Fn(&dac26_core::block::Block) -> bool,
+) -> dac26_core::block::Block {
     let parsed = SvParserProvider.parse_files(&[demo_design_path()]).unwrap();
 
     DataflowBlockizer
@@ -348,7 +348,7 @@ fn demo_trace_block(predicate: impl Fn(&Block) -> bool) -> Block {
         .unwrap()
 }
 
-fn block_file_key(block: &Block) -> &str {
+fn block_file_key(block: &dac26_core::block::Block) -> &str {
     Path::new(block.source_file())
         .file_stem()
         .and_then(|stem| stem.to_str())

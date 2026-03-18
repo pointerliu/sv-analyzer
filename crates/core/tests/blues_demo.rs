@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use dac26_app::slicer::BluesSlicer;
 use dac26_core::block::{Block, BlockSet, BlockType, CircuitType, DataflowEntry};
 use dac26_core::coverage::CoverageTracker;
+use dac26_core::slicer::BluesSlicer;
 use dac26_core::slicer::{SliceRequest, TimedSliceNode};
 use dac26_core::types::{BlockId, SignalNode, SignalNodeKind, Timestamp};
 

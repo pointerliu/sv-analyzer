@@ -1,5 +1,7 @@
 pub mod dataflow;
 
+pub use dataflow::{elaborate_block_set, DataflowBlockizer};
+
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{bail, Result};

@@ -1,3 +1,4 @@
+pub mod blues;
 pub mod static_slice;
 
 use anyhow::{anyhow, Result};
@@ -9,6 +10,7 @@ use crate::types::{
     StableSliceNode, StableSliceNodeKey, Timestamp,
 };
 
+pub use blues::BluesSlicer;
 pub use static_slice::StaticSlicer;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

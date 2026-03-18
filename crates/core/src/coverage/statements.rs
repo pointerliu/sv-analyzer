@@ -3,12 +3,12 @@ use std::collections::{BTreeSet, HashMap};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+use crate::ast::ParsedFile;
+use crate::block::Blockizer;
 use crate::block::{Block, BlockType, CircuitType, DataflowBlockizer};
+use crate::types::{SignalNode, Timestamp};
+use crate::wave::WaveformReader;
 use crate::wave::WellenReader;
-use dac26_core::ast::ParsedFile;
-use dac26_core::block::Blockizer;
-use dac26_core::types::{SignalNode, Timestamp};
-use dac26_core::wave::WaveformReader;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StatementCoverageEntry {

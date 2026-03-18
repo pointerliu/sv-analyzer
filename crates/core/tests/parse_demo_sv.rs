@@ -1,4 +1,5 @@
-use dac26_mcp::ast::{AstProvider, SvParserProvider};
+use dac26_core::ast::AstProvider;
+use dac26_core::ast::SvParserProvider;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};

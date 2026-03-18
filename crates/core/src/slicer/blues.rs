@@ -39,7 +39,6 @@ impl BluesSlicer {
     }
 
     pub fn slice(&self, request: &SliceRequest) -> Result<InstructionExecutionPath> {
-        // Verify the signal exists in the block set
         if self.block_set.drivers_for(&request.signal).is_empty() {
             let signal_name = request.signal.as_str();
             anyhow::bail!(

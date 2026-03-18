@@ -1,8 +1,9 @@
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dac26_mcp::coverage::{CoverageTracker, VcdCoverageTracker};
-use dac26_mcp::types::Timestamp;
+use dac26_core::coverage::CoverageTracker;
+use dac26_core::coverage::VcdCoverageTracker;
+use dac26_core::types::Timestamp;
 
 fn write_trace_coverage_vcd() -> std::path::PathBuf {
     let unique = SystemTime::now()

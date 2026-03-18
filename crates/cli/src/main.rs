@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
-use dac26_app::services::{
+use dac26_core::services::{
     blockize, coverage_report, slice_dynamic, slice_static, wave_value, BlockizeRequest,
     CoverageReportRequest, DynamicSliceRequest, StaticSliceRequest, WaveValueRequest,
 };
