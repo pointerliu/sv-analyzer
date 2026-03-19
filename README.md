@@ -7,7 +7,7 @@ Block-level dataflow analysis engine for Verilog/SystemVerilog designs.
 ```bash
 cargo build
 cargo test --all-targets -v
-cargo run -- --help          # CLI help
+cargo run --bin sva_cli -- --help          # CLI help
 ```
 
 ## Crates
@@ -15,18 +15,18 @@ cargo run -- --help          # CLI help
 | Crate | Purpose |
 |-------|---------|
 | `sva-core` | Core library: AST, block, coverage, slicer, types, wave |
-| `sva-cli` | CLI binary (`dataflow-engine`) |
+| `sva-cli` | CLI binary (`sva_cli`) |
 | `sva-mcp` | MCP server |
 | `sva-vscode` | VSCode extension backend |
 
 ## CLI Subcommands
 
 ```bash
-cargo run -- blockize --sv <file>      # Parse HDL → block dataflow
-cargo run -- slice --sv <file> --static --signal <name>   # Static slice
-cargo run -- slice --sv <file> --vcd <file> --signal <name> --time <t> --min-time <t>  # Dynamic slice
-cargo run -- coverage --vcd <file> --file <name> --line <n> --time <t>
-cargo run -- wave --vcd <file> --signal <name> --time <t>
+cargo run --bin sva_cli -- blockize --sv <file>      # Parse HDL → block dataflow
+cargo run --bin sva_cli -- slice --sv <file> --static --signal <name>   # Static slice
+cargo run --bin sva_cli -- slice --sv <file> --vcd <file> --signal <name> --time <t> --min-time <t>  # Dynamic slice
+cargo run --bin sva_cli -- coverage --vcd <file> --file <name> --line <n> --time <t>
+cargo run --bin sva_cli -- wave --vcd <file> --signal <name> --time <t>
 ```
 
 ## Library Usage
@@ -59,4 +59,4 @@ cargo test --all-targets -v
 
 ## ⚠️ Commands may be out of date
 
-Run `cargo run -- <subcommand> --help` to see current usage.
+Run `cargo run --bin sva_cli -- <subcommand> --help` to see current usage.
