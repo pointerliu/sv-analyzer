@@ -1,4 +1,4 @@
-# 🧠 Dataflow Engine
+# 🧠 SV-Analyzer
 
 A block-level dataflow analysis engine on Verilog/SystemVerilog designs.
 
@@ -426,23 +426,23 @@ You can also use the crate as a library.
 
 Main exported modules:
 
-- `dac26_mcp::ast`
-- `dac26_mcp::block`
-- `dac26_mcp::coverage`
-- `dac26_mcp::slicer`
-- `dac26_mcp::types`
-- `dac26_mcp::wave`
+- `sva_core::ast`
+- `sva_core::block`
+- `sva_core::coverage`
+- `sva_core::slicer`
+- `sva_core::types`
+- `sva_core::wave`
 
 Typical flow in Rust:
 
 ```rust
 use std::sync::Arc;
 
-use dac26_mcp::ast::{AstProvider, SvParserProvider};
-use dac26_mcp::block::{Blockizer, DataflowBlockizer};
-use dac26_mcp::coverage::VcdCoverageTracker;
-use dac26_mcp::slicer::{BluesSlicer, SliceRequest, StaticSlicer};
-use dac26_mcp::types::{SignalNode, Timestamp};
+use sva_core::ast::{AstProvider, SvParserProvider};
+use sva_core::block::{Blockizer, DataflowBlockizer};
+use sva_core::coverage::VcdCoverageTracker;
+use sva_core::slicer::{BluesSlicer, SliceRequest, StaticSlicer};
+use sva_core::types::{SignalNode, Timestamp};
 
 fn main() -> anyhow::Result<()> {
     let parsed = SvParserProvider.parse_files(&vec!["design.sv".into(), "tb.sv".into()])?;
