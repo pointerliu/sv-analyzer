@@ -1,479 +1,55 @@
-# 🧠 SV-Analyzer
+# SV-Analyzer
 
-A block-level dataflow analysis engine on Verilog/SystemVerilog designs.
+Block-level dataflow analysis engine for Verilog/SystemVerilog designs.
 
-It uses:
-
-- 🌳 `sv-parser` to parse Verilog/SystemVerilog into ASTs
-- 🌊 `wellen` to read VCD waveforms
-- 🔎 static slicing for timeless dependency graphs
-- ⏱️ Block-Level Instruction-Oriented Slicing (Blues algorithm)
-- 📈 Verilator `--trace-coverage` counters inside VCDs to get coverage information
-
-The repository contains both a reusable Rust library and a CLI for common workflows.
-
-## ✨ What this repo does
-
-This project turns HDL source code plus optional waveform/coverage information into graph-shaped dataflow results.
-
-At a high level, it can:
-
-- parse one or more `.v` / `.sv` / `.svh` source files
-- extract statement-level input/output dependencies
-- group statements into analysis blocks
-- build a static slice graph for a target signal
-- build a dynamic slice graph (Blues) for a target signal at a specific time
-- query trace coverage counters from a VCD
-- query signal values from a waveform
-- export slice results as stable JSON
-
-## 🏗️ Architecture in one minute
-
-The core design goal is swappability.
-
-Main subsystems are trait-based:
-
-- `AstProvider` - parse HDL source files
-- `Blockizer` - convert parsed source into block-level dataflow units
-- `CoverageTracker` - answer coverage questions at annotation times
-- `WaveformReader` - answer signal-value questions from waveforms
-- `Slicer` - compute backward slices
-
-Current built-in implementations are:
-
-- `SvParserProvider`
-- `DataflowBlockizer`
-- `VcdCoverageTracker`
-- `WellenReader`
-- `StaticSlicer`
-- `BluesSlicer`
-
-This keeps the repo easy to extend if you later want to plug in a different parser, waveform backend, or slicing strategy.
-
-## 🚀 Getting started
-
-### Requirements
-
-- Rust toolchain with `cargo`
-- Verilator
-- VCD files for `wave`, `coverage`, and dynamic `slice`
-
-### Build
+## Quick Start
 
 ```bash
 cargo build
-```
-
-### Run the test suite
-
-```bash
 cargo test --all-targets -v
+cargo run -- --help          # CLI help
 ```
 
-### Show CLI help
+## Crates
+
+| Crate | Purpose |
+|-------|---------|
+| `sva-core` | Core library: AST, block, coverage, slicer, types, wave |
+| `sva-cli` | CLI binary (`dataflow-engine`) |
+| `sva-mcp` | MCP server |
+| `sva-vscode` | VSCode extension backend |
+
+## CLI Subcommands
 
 ```bash
-cargo run -- --help
+cargo run -- blockize --sv <file>      # Parse HDL → block dataflow
+cargo run -- slice --sv <file> --static --signal <name>   # Static slice
+cargo run -- slice --sv <file> --vcd <file> --signal <name> --time <t> --min-time <t>  # Dynamic slice
+cargo run -- coverage --vcd <file> --file <name> --line <n> --time <t>
+cargo run -- wave --vcd <file> --signal <name> --time <t>
 ```
 
-## 🖼️ Graph Viewer
-
-The repo also includes a static slice graph viewer under `viewer/`.
-
-- serve it locally with `python3 -m http.server 4173 --directory viewer`
-- load JSON produced by `cargo run -- slice ...`
-- see `viewer/README.md` for local preview steps, demo fixture commands, and a quick guide to the rendered scopes, edges, and sidebar
-
-## 🧰 CLI overview
-
-The binary name is `dataflow-engine`.
-
-When using `cargo`, invoke it like this:
-
-```bash
-cargo run -- <subcommand> ...
-```
-
-Available subcommands:
-
-- `blockize` - parse HDL and emit blockized dataflow units as JSON
-- `slice` - compute a static or dynamic slice graph
-- `coverage` - query Verilator trace-coverage counters from a VCD
-- `wave` - query a signal value from a waveform
-
-## 🌳 `blockize`
-
-Turn HDL source files into block-level dataflow units.
-
-### Help
-
-```bash
-cargo run -- blockize --help
-```
-
-### Usage
-
-```bash
-cargo run -- blockize --sv path/to/design.sv
-```
-
-Multiple source files are supported by repeating `--sv`:
-
-```bash
-cargo run -- blockize \
-  --sv path/to/design.sv \
-  --sv path/to/tb.sv
-```
-
-### Output shape
-
-`blockize` prints JSON with two top-level fields:
-
-- `blocks` - array of discovered blocks
-- `signal_to_drivers` - map from signal name to block ids
-
-Each block includes information such as:
-
-- block id
-- block type (`ModInput`, `ModOutput`, `Assign`, `Always`)
-- circuit type (`Combinational`, `Sequential`)
-- source file and line range
-- input signals and output signals
-- statement-level dataflow entries
-
-Dataflow entries use typed signal objects:
-
-- `kind: "variable"` for HDL identifiers that can be traced backward
-- `kind: "literal"` for constants such as `8'h0`, `1'b0`, or `1`
-- `locate` to preserve the original source offset, line, and token length
-
-## 🔎 `slice`
-
-Compute backward slices rooted at a target signal.
-
-There are two modes:
-
-- 🧱 static slice: timeless dependency graph
-- ⏱️ dynamic slice: Blues-style time-annotated graph
-
-### Help
-
-```bash
-cargo run -- slice --help
-```
-
-### Static slice
-
-Static slicing does not need waveform input.
-
-```bash
-cargo run -- slice \
-  --static \
-  --sv demo/trace_coverage_demo/design.sv \
-  --sv demo/trace_coverage_demo/tb.sv \
-  --signal TOP.tb.result
-```
-
-Use waveform-style hierarchical signal paths for slicing. `TOP` is the synthetic root,
-top-level testbench signals live under `TOP.tb`, and instantiated DUT signals live under
-paths such as `TOP.tb.dut.result`.
-
-Static slice output:
-
-- uses the shared stable graph JSON format
-- block nodes do **not** include `time`
-- literal leaf nodes may appear without a `block_id`
-- edges represent dataflow dependencies between blocks/statements and may terminate at literals
-
-### Dynamic slice
-
-Dynamic slicing requires a VCD plus a target time window.
-
-```bash
-cargo run -- slice \
-  --sv demo/trace_coverage_demo/design.sv \
-  --sv demo/trace_coverage_demo/tb.sv \
-  --vcd demo/trace_coverage_demo/logs/sim.vcd \
-  --signal TOP.tb.result \
-  --time 40 \
-  --min-time 0
-```
-
-Dynamic slice output:
-
-- uses the same stable JSON graph format as static slicing
-- block and literal nodes include `time`
-- edges may carry the propagating signal name
-- literal leaf edges omit `signal` and terminate traversal
-
-### Stable slice JSON format
-
-Both slicers emit a stable graph object with:
-
-```json
-{
-  "nodes": [
-    { "kind": "block", "id": 0, "block_id": 5, "time": 10 },
-    {
-      "kind": "literal",
-      "id": 1,
-      "signal": {
-        "kind": "literal",
-        "name": "8'h0",
-        "locate": { "offset": 1713, "line": 55, "len": 1 }
-      },
-      "time": 9
-    }
-  ],
-  "edges": [
-    {
-      "from": 0,
-      "to": 1,
-      "signal": {
-        "kind": "variable",
-        "name": "tmp",
-        "locate": { "offset": 0, "line": 0, "len": 3 }
-      }
-    },
-    { "from": 1, "to": 0 }
-  ],
-  "blocks": [
-    { "id": 5, "scope": "dut", "block_type": "Always" }
-  ]
-}
-```
-
-Notes:
-
-- block nodes carry `block_id`; literal nodes carry a `signal` object instead
-- `nodes[*].time` is omitted for static slices
-- `edges[*].from` and `edges[*].to` reference node ids, not raw block ids
-- `edges[*].signal` is omitted for terminal literal edges
-- `blocks` gives metadata for the block ids used in the graph
-
-## 📈 `coverage`
-
-Query Verilator `--trace-coverage` counters embedded in a VCD.
-
-### Help
-
-```bash
-cargo run -- coverage --help
-```
-
-### Basic usage
-
-```bash
-cargo run -- coverage \
-  --vcd demo/trace_coverage_demo/logs/sim.vcd \
-  --file design \
-  --line 35 \
-  --time 12
-```
-
-Example output:
-
-```json
-{
-  "file": "design",
-  "line": 35,
-  "time": 12,
-  "hit_count": 1,
-  "delta_hits": 1,
-  "is_covered": true
-}
-```
-
-### Clock-aware annotation mode
-
-For dynamic analysis, this repo supports a clock-aware annotation timeline.
-
-Use:
-
-- `--clock-signal <name>`
-- `--clk-step <n>`
-
-Example:
-
-```bash
-cargo run -- coverage \
-  --vcd demo/trace_coverage_demo/logs/sim.vcd \
-  --file design \
-  --line 35 \
-  --time 100 \
-  --clock-signal tb.clk \
-  --clk-step 100
-```
-
-Important semantics:
-
-- the analysis timeline is annotation-based, not raw-VCD-time-based
-- annotation points advance by `clk_step` on each detected positive clock edge
-- coverage at time `t` is determined from counter **delta**, not absolute counter value
-- if a line has count `k` at `t` and still `k` at `t + clk_step`, then it is treated as **not covered** at the later annotation
-
-## 🌊 `wave`
-
-Query the value of a signal from a VCD.
-
-### Help
-
-```bash
-cargo run -- wave --help
-```
-
-### Usage
-
-```bash
-cargo run -- wave \
-  --vcd demo/trace_coverage_demo/logs/sim.vcd \
-  --signal tb.dut.state \
-  --time 10
-```
-
-Example output:
-
-```json
-{
-  "signal": "tb.dut.state",
-  "time": 10,
-  "value": {
-    "raw_bits": "0011",
-    "pretty_hex": "0x3"
-  }
-}
-```
-
-Signal lookup behavior:
-
-- full hierarchical names are supported
-- suffix aliases may also resolve if they are unambiguous
-- ambiguous aliases intentionally return `null` / no value
-- exact full-name matches win over suffix aliases
-
-## 🧪 Demo assets
-
-The repo includes `demo/trace_coverage_demo/`, which is useful for experimentation.
-
-You will find:
-
-- HDL source files
-- a testbench
-- helper scripts
-- generated logs including `logs/sim.vcd`
-
-Example files:
-
-- `demo/trace_coverage_demo/design.sv`
-- `demo/trace_coverage_demo/tb.sv`
-- `demo/trace_coverage_demo/logs/sim.vcd`
-- `demo/trace_coverage_demo/coverage_at_time.py`
-
-## 🧠 Core concepts
-
-### Blocks
-
-The analysis first extracts statement-level dependencies, then groups them into analysis blocks.
-
-Current block types are:
-
-- `ModInput`
-- `ModOutput`
-- `Assign`
-- `Always`
-
-Each block records:
-
-- module scope
-- source location
-- input signals
-- output signals
-- per-output dataflow entries
-
-Signal objects are typed:
-
-- variable signals can be traced through `signal_to_drivers`
-- literals are preserved in dataflow and slice graphs as terminal leaves
-- literals intentionally do not participate in backward driver lookup
-
-### Static vs dynamic slicing
-
-Static slicing answers:
-
-> “Which blocks can affect this signal in the design?”
-
-Dynamic slicing answers:
-
-> “Which blocks affected this signal at this specific analysis time?”
-
-Static slices are timeless.
-
-Dynamic slices are time-annotated and use waveform / coverage information to decide which sequential dependencies are active.
-
-### Coverage timeline semantics
-
-When using clock-aware coverage:
-
-- raw VCD timestamps are sampled at positive clock edges
-- user-facing annotation times advance by `clk_step`
-- coverage is interpreted through counter deltas between annotations
-
-This makes the slicing logic independent of arbitrary raw timestamp spacing in the VCD.
-
-## 🧩 Library usage
-
-You can also use the crate as a library.
-
-Main exported modules:
-
-- `sva_core::ast`
-- `sva_core::block`
-- `sva_core::coverage`
-- `sva_core::slicer`
-- `sva_core::types`
-- `sva_core::wave`
-
-Typical flow in Rust:
+## Library Usage
 
 ```rust
-use std::sync::Arc;
-
 use sva_core::ast::{AstProvider, SvParserProvider};
 use sva_core::block::{Blockizer, DataflowBlockizer};
 use sva_core::coverage::VcdCoverageTracker;
 use sva_core::slicer::{BluesSlicer, SliceRequest, StaticSlicer};
 use sva_core::types::{SignalNode, Timestamp};
 
-fn main() -> anyhow::Result<()> {
-    let parsed = SvParserProvider.parse_files(&vec!["design.sv".into(), "tb.sv".into()])?;
-    let block_set = DataflowBlockizer.blockize(&parsed)?;
-
-    let static_graph = StaticSlicer::new(block_set.clone())
-        .slice(&SliceRequest {
-            signal: SignalNode::named("result"),
-            time: Timestamp(0),
-            min_time: Timestamp(0),
-        })?
-        .stable_json_graph()?;
-
-    let coverage = Arc::new(VcdCoverageTracker::open("sim.vcd")?);
-    let dynamic_graph = BluesSlicer::new(block_set, coverage)
-        .slice(&SliceRequest {
-            signal: SignalNode::named("result"),
-            time: Timestamp(40),
-            min_time: Timestamp(0),
-        })?
-        .stable_json_graph()?;
-
-    println!("static nodes: {}", static_graph.nodes.len());
-    println!("dynamic nodes: {}", dynamic_graph.nodes.len());
-    Ok(())
-}
+let parsed = SvParserProvider.parse_files(&[...])?;
+let blocks = DataflowBlockizer.blockize(&parsed)?;
+let graph = StaticSlicer::new(blocks).slice(&SliceRequest { ... })?;
 ```
 
-## 🔬 Development notes
+## Architecture
 
-Useful commands:
+Trait-based core: `AstProvider`, `Blockizer`, `CoverageTracker`, `WaveformReader`, `Slicer`.
+
+Implementations: `SvParserProvider`, `DataflowBlockizer`, `VcdCoverageTracker`, `WellenReader`, `StaticSlicer`, `BluesSlicer`.
+
+## Dev Commands
 
 ```bash
 cargo fmt --all
@@ -481,28 +57,6 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-targets -v
 ```
 
-## ⚠️ Current limitations
+## ⚠️ Commands may be out of date
 
-- the CLI help text is still minimal and scaffold-like
-- the project focuses on block-level graph results, not LLM-related pieces from earlier prototypes
-- waveform and coverage handling currently targets VCD-backed workflows
-- many examples rely on the included demo assets or temporary fixtures created in tests
-
-## 📚 Related files
-
-- `SPEC.md` - original project intent and requirements
-- `docs/plans/2026-03-13-dataflow-engine-implementation.md` - implementation plan and task breakdown
-- `demo/trace_coverage_demo/` - demo design and generated waveform assets
-
-## 🤝 Contributing
-
-If you extend the repo, try to preserve the current design direction:
-
-- keep core systems trait-based and swappable
-- prefer stable JSON output for graph results
-- keep static and dynamic slicing on the same conceptual graph model
-- verify changes with formatting, clippy, and integration tests
-
-## 📜 License
-
-No license file is present yet. Add one before distributing the project outside your current environment. 📝
+Run `cargo run -- <subcommand> --help` to see current usage.
