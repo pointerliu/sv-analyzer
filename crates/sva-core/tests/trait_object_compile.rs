@@ -1,8 +1,8 @@
-use dac26_core::ast::AstProvider;
-use dac26_core::block::Blockizer;
-use dac26_core::coverage::CoverageTracker;
-use dac26_core::slicer::Slicer;
-use dac26_core::wave::WaveformReader;
+use sva_core::ast::AstProvider;
+use sva_core::block::Blockizer;
+use sva_core::coverage::CoverageTracker;
+use sva_core::slicer::Slicer;
+use sva_core::wave::WaveformReader;
 
 fn accepts_traits(
     _ast: &dyn AstProvider,

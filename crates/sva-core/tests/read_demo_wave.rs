@@ -2,15 +2,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dac26_core::ast::AstProvider;
-use dac26_core::ast::SvParserProvider;
-use dac26_core::block::DataflowBlockizer;
-use dac26_core::block::{BlockType, Blockizer, CircuitType};
-use dac26_core::coverage::CoverageTracker;
-use dac26_core::coverage::VcdCoverageTracker;
-use dac26_core::types::{SignalNode, Timestamp};
-use dac26_core::wave::WaveformReader;
-use dac26_core::wave::WellenReader;
+use sva_core::ast::AstProvider;
+use sva_core::ast::SvParserProvider;
+use sva_core::block::DataflowBlockizer;
+use sva_core::block::{BlockType, Blockizer, CircuitType};
+use sva_core::coverage::CoverageTracker;
+use sva_core::coverage::VcdCoverageTracker;
+use sva_core::types::{SignalNode, Timestamp};
+use sva_core::wave::WaveformReader;
+use sva_core::wave::WellenReader;
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
@@ -333,9 +333,7 @@ b{wide_bits} !\n"
     fs::remove_file(path).unwrap();
 }
 
-fn demo_trace_block(
-    predicate: impl Fn(&dac26_core::block::Block) -> bool,
-) -> dac26_core::block::Block {
+fn demo_trace_block(predicate: impl Fn(&sva_core::block::Block) -> bool) -> sva_core::block::Block {
     let parsed = SvParserProvider.parse_files(&[demo_design_path()]).unwrap();
 
     DataflowBlockizer
@@ -348,7 +346,7 @@ fn demo_trace_block(
         .unwrap()
 }
 
-fn block_file_key(block: &dac26_core::block::Block) -> &str {
+fn block_file_key(block: &sva_core::block::Block) -> &str {
     Path::new(block.source_file())
         .file_stem()
         .and_then(|stem| stem.to_str())

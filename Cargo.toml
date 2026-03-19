@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/core",
-    "crates/cli",
-    "crates/vscode-backend",
-    "crates/mcp",
+    "crates/sva-core",
+    "crates/sva-cli",
+    "crates/sva-vscode",
+    "crates/sva-mcp",
 ]

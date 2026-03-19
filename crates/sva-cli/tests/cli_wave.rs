@@ -53,7 +53,7 @@ fn write_wave_vcd() -> PathBuf {
         .unwrap()
         .as_nanos();
     let path = std::env::temp_dir().join(format!(
-        "dac26_task14_cli_wave_{}_{}.vcd",
+        "sva_task14_cli_wave_{}_{}.vcd",
         std::process::id(),
         unique
     ));

@@ -151,48 +151,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
-name = "dac26_cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "dac26_core",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dac26_core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "sv-parser",
- "wellen",
-]
-
-[[package]]
-name = "dac26_mcp_server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "dac26_core",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dac26_vscode_backend"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "dac26_core",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -646,6 +604,48 @@ dependencies = [
  "regex",
  "sv-parser-macros",
  "walkdir",
+]
+
+[[package]]
+name = "sva_cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde",
+ "serde_json",
+ "sva_core",
+]
+
+[[package]]
+name = "sva_core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "sv-parser",
+ "wellen",
+]
+
+[[package]]
+name = "sva_mcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "sva_core",
+]
+
+[[package]]
+name = "sva_vscode"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "sva_core",
 ]
 
 [[package]]

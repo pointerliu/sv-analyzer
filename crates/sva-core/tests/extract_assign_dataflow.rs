@@ -3,10 +3,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dac26_core::ast::AstProvider;
-use dac26_core::ast::SvParserProvider;
-use dac26_core::block::DataflowBlockizer;
-use dac26_core::block::{BlockType, Blockizer};
+use sva_core::ast::AstProvider;
+use sva_core::ast::SvParserProvider;
+use sva_core::block::DataflowBlockizer;
+use sva_core::block::{BlockType, Blockizer};
 
 #[test]
 fn extracts_statement_level_dataflow_from_assignments_and_conditions() {
@@ -115,7 +115,7 @@ fn keeps_multi_target_assignments_as_one_dataflow_entry_with_list_output() {
 }
 
 fn collect_entries(
-    blocks: &dac26_core::block::BlockSet,
+    blocks: &sva_core::block::BlockSet,
 ) -> BTreeSet<(String, String, String, Vec<String>, Vec<String>)> {
     blocks
         .blocks()
@@ -169,7 +169,7 @@ fn entry(
     )
 }
 
-fn sorted_outputs(signals: &[dac26_core::types::SignalNode]) -> Vec<String> {
+fn sorted_outputs(signals: &[sva_core::types::SignalNode]) -> Vec<String> {
     let mut outputs = signals
         .iter()
         .map(|signal| signal.name.clone())
@@ -178,9 +178,7 @@ fn sorted_outputs(signals: &[dac26_core::types::SignalNode]) -> Vec<String> {
     outputs
 }
 
-fn sorted_inputs(
-    signals: &std::collections::HashSet<dac26_core::types::SignalNode>,
-) -> Vec<String> {
+fn sorted_inputs(signals: &std::collections::HashSet<sva_core::types::SignalNode>) -> Vec<String> {
     let mut inputs = signals
         .iter()
         .map(|signal| signal.name.clone())
@@ -195,7 +193,7 @@ fn write_fixture(contents: &str) -> PathBuf {
         .unwrap()
         .as_nanos();
     let path = std::env::temp_dir().join(format!(
-        "dac26_task6_extract_assign_dataflow_{}_{}.sv",
+        "sva_task6_extract_assign_dataflow_{}_{}.sv",
         std::process::id(),
         unique
     ));

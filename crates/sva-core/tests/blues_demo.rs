@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use dac26_core::block::{Block, BlockSet, BlockType, CircuitType, DataflowEntry};
-use dac26_core::coverage::CoverageTracker;
-use dac26_core::slicer::BluesSlicer;
-use dac26_core::slicer::{SliceRequest, TimedSliceNode};
-use dac26_core::types::{BlockId, SignalNode, SignalNodeKind, Timestamp};
+use sva_core::block::{Block, BlockSet, BlockType, CircuitType, DataflowEntry};
+use sva_core::coverage::CoverageTracker;
+use sva_core::slicer::BluesSlicer;
+use sva_core::slicer::{SliceRequest, TimedSliceNode};
+use sva_core::types::{BlockId, SignalNode, SignalNodeKind, Timestamp};
 
 #[test]
 fn blues_backtracks_sequential_state_until_coverage_hit_and_respects_min_time() {

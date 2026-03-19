@@ -1,10 +1,10 @@
 use crate::protocol::JsonRpcResponse;
-use dac26_core::services::{
+use serde_json::{json, Value};
+use std::path::PathBuf;
+use sva_core::services::{
     blockize, coverage_report, slice_dynamic, slice_static, wave_value, BlockizeRequest,
     CoverageReportRequest, DynamicSliceRequest, StaticSliceRequest, WaveValueRequest,
 };
-use serde_json::{json, Value};
-use std::path::PathBuf;
 
 pub fn handle_initialize(id: Option<serde_json::Value>, _params: Value) -> Value {
     let resp = JsonRpcResponse::result(
@@ -12,7 +12,7 @@ pub fn handle_initialize(id: Option<serde_json::Value>, _params: Value) -> Value
         json!({
             "protocolVersion": "2024-11-05",
             "serverInfo": {
-                "name": "dac26-mcp-server",
+                "name": "sva-mcp",
                 "version": "0.1.0"
             },
             "capabilities": {

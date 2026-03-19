@@ -1,15 +1,15 @@
-use dac26_core::ast::AstProvider;
-use dac26_core::ast::SvParserProvider;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+use sva_core::ast::AstProvider;
+use sva_core::ast::SvParserProvider;
 
 fn unique_temp_dir() -> PathBuf {
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("dac26_mcp_parse_demo_sv_{suffix}"))
+    std::env::temp_dir().join(format!("sva_mcp_parse_demo_sv_{suffix}"))
 }
 
 #[test]

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
-use dac26_core::block::{Block, BlockSet, BlockType, CircuitType, DataflowEntry};
-use dac26_core::types::{BlockId, SignalNode};
+use sva_core::block::{Block, BlockSet, BlockType, CircuitType, DataflowEntry};
+use sva_core::types::{BlockId, SignalNode};
 
 #[test]
 fn block_new_derives_signal_sets_from_dataflow() {

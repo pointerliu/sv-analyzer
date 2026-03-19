@@ -1,5 +1,5 @@
 [package]
-name = "dac26_cli"
+name = "sva_cli"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,7 +8,7 @@ name = "dataflow-engine"
 path = "src/main.rs"
 
 [dependencies]
-dac26_core = { path = "../core" }
+sva_core = { path = "../sva-core" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

@@ -550,7 +550,7 @@ fn write_slice_fixture() -> SliceFixture {
         .unwrap()
         .as_nanos();
     let base = std::env::temp_dir().join(format!(
-        "dac26_task15_cli_slice_{}_{}",
+        "sva_task15_cli_slice_{}_{}",
         std::process::id(),
         unique
     ));

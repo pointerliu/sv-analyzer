@@ -1,10 +1,10 @@
 use crate::protocol::{JsonRpcError, JsonRpcResponse};
 use crate::types::{BlockizeParams, CoverageParams, SliceParams, WaveParams};
-use dac26_core::services::{
+use serde_json::Value;
+use sva_core::services::{
     blockize, coverage_report, slice_dynamic, slice_static, wave_value, BlockizeRequest,
     CoverageReportRequest, DynamicSliceRequest, StaticSliceRequest, WaveValueRequest,
 };
-use serde_json::Value;
 
 pub fn handle(method: &str, params: Option<Value>) -> JsonRpcResponse {
     match method {
@@ -29,7 +29,7 @@ fn handle_initialize() -> JsonRpcResponse {
         id: None,
         result: Some(serde_json::json!({
             "protocolVersion": "1.0",
-            "serverName": "dac26_vscode_backend",
+            "serverName": "sva-vscode",
             "capabilities": {}
         })),
         error: None,

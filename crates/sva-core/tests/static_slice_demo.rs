@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 
-use dac26_core::block::{Block, BlockSet, BlockType, CircuitType, DataflowEntry};
-use dac26_core::slicer::{
+use sva_core::block::{Block, BlockSet, BlockType, CircuitType, DataflowEntry};
+use sva_core::slicer::{
     InstructionExecutionPath, SliceGraph, SliceRequest, Slicer, StaticBlockNode, StaticSlicer,
 };
-use dac26_core::types::{BlockId, SignalNode, SignalNodeKind, TimedSliceNode, Timestamp};
+use sva_core::types::{BlockId, SignalNode, SignalNodeKind, TimedSliceNode, Timestamp};
 
 #[test]
 fn instruction_execution_path_uses_shared_graph_container() {

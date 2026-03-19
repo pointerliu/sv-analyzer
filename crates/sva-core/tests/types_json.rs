@@ -1,7 +1,7 @@
-use dac26_core::types::{
+use serde_json::json;
+use sva_core::types::{
     BlockEdgeJson, BlockId, BlockJson, SignalNode, TimedSliceNode, Timestamp, TraceGraphJson,
 };
-use serde_json::json;
 
 #[test]
 fn block_node_and_graph_dtos_serialize_as_expected() {

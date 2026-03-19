@@ -1,8 +1,8 @@
-use dac26_core::slicer::{
+use serde_json::json;
+use sva_core::slicer::{
     InstructionExecutionPath, SliceBlock, SliceEdge, SliceGraph, StaticBlockNode, TimedSliceNode,
 };
-use dac26_core::types::{BlockId, SignalNode, Timestamp};
-use serde_json::json;
+use sva_core::types::{BlockId, SignalNode, Timestamp};
 
 #[test]
 fn instruction_execution_path_serializes_as_stable_json_graph() {
