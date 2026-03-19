@@ -1,4 +1,4 @@
-# SV-Analyzer
+# sv-analyzer
 
 Block-level dataflow analysis engine for Verilog/SystemVerilog designs.
 
