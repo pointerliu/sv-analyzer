@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::error::{FuzzyMatch, SignalNotFound};
 use crate::types::{serialize_signal_driver_map, serialize_signal_name_set, BlockId, SignalNode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -80,6 +81,19 @@ impl BlockSet {
             .get(signal)
             .map(Vec::as_slice)
             .unwrap_or(&[])
+    }
+
+    pub fn validate_signal_has_driver(&self, signal: &SignalNode) -> Result<()> {
+        if !self.drivers_for(signal).is_empty() {
+            return Ok(());
+        }
+        let candidates: Vec<String> = self.signal_names().map(|s| s.name.clone()).collect();
+        let suggestions = FuzzyMatch::find_top_n(signal.as_str(), &candidates);
+        Err(SignalNotFound {
+            signal: signal.as_str().to_string(),
+            suggestions,
+        }
+        .into())
     }
 }
 
