@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use anyhow::Result;
 
 use crate::block::{Block, BlockSet};
+use crate::error::{FuzzyMatch, SignalNotFound};
 use crate::slicer::{
     InstructionExecutionPath, SliceRequest, Slicer, StaticBlockEdge, StaticBlockJson,
     StaticBlockNode, StaticSliceGraph,
@@ -33,10 +34,17 @@ impl StaticSlicer {
     pub fn slice(&self, request: &SliceRequest) -> Result<StaticSliceGraph> {
         if self.block_set.drivers_for(&request.signal).is_empty() {
             let signal_name = request.signal.as_str();
-            anyhow::bail!(
-                "signal '{}' not found in block set. Provide hierarchical name (e.g., 'TOP.module.signal')",
-                signal_name
-            );
+            let candidates: Vec<String> = self
+                .block_set
+                .signal_names()
+                .map(|s| s.name.clone())
+                .collect();
+            let suggestions = FuzzyMatch::find_top_n(signal_name, &candidates);
+            return Err(SignalNotFound {
+                signal: signal_name.to_string(),
+                suggestions,
+            }
+            .into());
         }
 
         let mut visited = HashSet::new();

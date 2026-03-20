@@ -148,7 +148,7 @@ fn run_wave(args: WaveArgs) -> Result<()> {
     struct WaveOutput {
         signal: String,
         time: i64,
-        value: Option<WaveValueOutput>,
+        value: WaveValueOutput,
     }
     #[derive(serde::Serialize)]
     struct WaveValueOutput {
@@ -158,10 +158,10 @@ fn run_wave(args: WaveArgs) -> Result<()> {
     let output = WaveOutput {
         signal: args.signal,
         time: args.time,
-        value: value.map(|v| WaveValueOutput {
-            raw_bits: v.raw_bits,
-            pretty_hex: v.pretty_hex,
-        }),
+        value: WaveValueOutput {
+            raw_bits: value.raw_bits,
+            pretty_hex: value.pretty_hex,
+        },
     };
     println!("{}", serde_json::to_string_pretty(&output)?);
     Ok(())

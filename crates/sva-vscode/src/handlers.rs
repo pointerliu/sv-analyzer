@@ -167,19 +167,13 @@ fn handle_wave(params: Option<Value>) -> JsonRpcResponse {
         time: params.time,
     };
     match wave_value(req) {
-        Ok(Some(result)) => JsonRpcResponse {
+        Ok(result) => JsonRpcResponse {
             jsonrpc: "2.0".into(),
             id: None,
             result: Some(serde_json::json!({
                 "raw_bits": result.raw_bits,
                 "pretty_hex": result.pretty_hex
             })),
-            error: None,
-        },
-        Ok(None) => JsonRpcResponse {
-            jsonrpc: "2.0".into(),
-            id: None,
-            result: Some(serde_json::Value::Null),
             error: None,
         },
         Err(e) => internal_error(e),

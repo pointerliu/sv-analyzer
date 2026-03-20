@@ -35,7 +35,10 @@ pub struct DynamicSliceRequest {
     pub min_time: i64,
     #[schemars(description = "clock signal name", default)]
     pub clock: Option<String>,
-    #[schemars(description = "clock period (i.e., time interval between two posedge clock)", default)]
+    #[schemars(
+        description = "clock period (i.e., time interval between two posedge clock)",
+        default
+    )]
     pub clk_step: Option<i64>,
 }
 
@@ -69,10 +72,8 @@ impl SvaMcpServer {
             .into_iter()
             .map(std::path::PathBuf::from)
             .collect();
-        let result = sva_core::services::blockize(sva_core::services::BlockizeRequest {
-            sv_files,
-        })
-        .map_err(|e| e.to_string())?;
+        let result = sva_core::services::blockize(sva_core::services::BlockizeRequest { sv_files })
+            .map_err(|e| e.to_string())?;
         serde_json::to_string_pretty(&result).map_err(|e| e.to_string())
     }
 
@@ -115,14 +116,13 @@ impl SvaMcpServer {
             .into_iter()
             .map(std::path::PathBuf::from)
             .collect();
-        let result = sva_core::services::coverage_report(
-            sva_core::services::CoverageReportRequest {
+        let result =
+            sva_core::services::coverage_report(sva_core::services::CoverageReportRequest {
                 sv_files,
                 vcd: std::path::PathBuf::from(req.vcd),
                 time: req.time,
-            },
-        )
-        .map_err(|e| e.to_string())?;
+            })
+            .map_err(|e| e.to_string())?;
         serde_json::to_string_pretty(&result).map_err(|e| e.to_string())
     }
 
@@ -133,14 +133,13 @@ impl SvaMcpServer {
             time: req.time,
         })
         .map_err(|e| e.to_string())?;
-        Ok(match result {
-            Some(val) => format!("{:?}", val),
-            None => "null".to_string(),
-        })
+        Ok(format!("{:?}", result))
     }
 }
 
-fn build_input_schema(props: Map<String, serde_json::Value>) -> Arc<Map<String, serde_json::Value>> {
+fn build_input_schema(
+    props: Map<String, serde_json::Value>,
+) -> Arc<Map<String, serde_json::Value>> {
     let mut schema = Map::new();
     schema.insert("type".to_string(), serde_json::json!("object"));
     schema.insert("properties".to_string(), serde_json::json!(props));
@@ -149,9 +148,7 @@ fn build_input_schema(props: Map<String, serde_json::Value>) -> Arc<Map<String, 
 
 impl ServerHandler for SvaMcpServer {
     fn get_info(&self) -> InitializeResult {
-        let caps: ServerCapabilities = ServerCapabilities::builder()
-            .enable_tools()
-            .build();
+        let caps: ServerCapabilities = ServerCapabilities::builder().enable_tools().build();
 
         InitializeResult::new(caps)
             .with_instructions("sva-mcp: HDL dataflow analysis engine")
@@ -333,48 +330,80 @@ impl ServerHandler for SvaMcpServer {
         _ctx: rmcp::service::RequestContext<rmcp::service::RoleServer>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let name = request.name.to_string();
-        let arguments = request.arguments.as_ref().ok_or_else(|| {
-            rmcp::ErrorData::invalid_params("missing arguments", None)
-        })?;
+        let arguments = request
+            .arguments
+            .as_ref()
+            .ok_or_else(|| rmcp::ErrorData::invalid_params("missing arguments", None))?;
 
-        let result_text = match name.as_str() {
-            "blockize" => {
-                let req: BlockizeRequest = serde_json::from_value(serde_json::Value::Object(arguments.clone())).map_err(|e| {
-                    rmcp::ErrorData::invalid_params(format!("invalid blockize request: {}", e), None)
-                })?;
-                self.blockize_impl(req).map_err(|e| rmcp::ErrorData::internal_error(e, None))?
-            }
-            "slice_static" => {
-                let req: StaticSliceRequest = serde_json::from_value(serde_json::Value::Object(arguments.clone())).map_err(|e| {
-                    rmcp::ErrorData::invalid_params(format!("invalid slice_static request: {}", e), None)
-                })?;
-                self.slice_static_impl(req).map_err(|e| rmcp::ErrorData::internal_error(e, None))?
-            }
-            "slice_dynamic" => {
-                let req: DynamicSliceRequest = serde_json::from_value(serde_json::Value::Object(arguments.clone())).map_err(|e| {
-                    rmcp::ErrorData::invalid_params(format!("invalid slice_dynamic request: {}", e), None)
-                })?;
-                self.slice_dynamic_impl(req).map_err(|e| rmcp::ErrorData::internal_error(e, None))?
-            }
-            "coverage_report" => {
-                let req: CoverageReportRequest = serde_json::from_value(serde_json::Value::Object(arguments.clone())).map_err(|e| {
-                    rmcp::ErrorData::invalid_params(format!("invalid coverage_report request: {}", e), None)
-                })?;
-                self.coverage_report_impl(req).map_err(|e| rmcp::ErrorData::internal_error(e, None))?
-            }
-            "wave_value" => {
-                let req: WaveValueRequest = serde_json::from_value(serde_json::Value::Object(arguments.clone())).map_err(|e| {
-                    rmcp::ErrorData::invalid_params(format!("invalid wave_value request: {}", e), None)
-                })?;
-                self.wave_value_impl(req).map_err(|e| rmcp::ErrorData::internal_error(e, None))?
-            }
-            _ => {
-                return Err(rmcp::ErrorData::invalid_params(
-                    format!("unknown tool: {}", name),
-                    None,
-                ))
-            }
-        };
+        let result_text =
+            match name.as_str() {
+                "blockize" => {
+                    let req: BlockizeRequest =
+                        serde_json::from_value(serde_json::Value::Object(arguments.clone()))
+                            .map_err(|e| {
+                                rmcp::ErrorData::invalid_params(
+                                    format!("invalid blockize request: {}", e),
+                                    None,
+                                )
+                            })?;
+                    self.blockize_impl(req)
+                        .map_err(|e| rmcp::ErrorData::internal_error(e, None))?
+                }
+                "slice_static" => {
+                    let req: StaticSliceRequest =
+                        serde_json::from_value(serde_json::Value::Object(arguments.clone()))
+                            .map_err(|e| {
+                                rmcp::ErrorData::invalid_params(
+                                    format!("invalid slice_static request: {}", e),
+                                    None,
+                                )
+                            })?;
+                    self.slice_static_impl(req)
+                        .map_err(|e| rmcp::ErrorData::internal_error(e, None))?
+                }
+                "slice_dynamic" => {
+                    let req: DynamicSliceRequest =
+                        serde_json::from_value(serde_json::Value::Object(arguments.clone()))
+                            .map_err(|e| {
+                                rmcp::ErrorData::invalid_params(
+                                    format!("invalid slice_dynamic request: {}", e),
+                                    None,
+                                )
+                            })?;
+                    self.slice_dynamic_impl(req)
+                        .map_err(|e| rmcp::ErrorData::internal_error(e, None))?
+                }
+                "coverage_report" => {
+                    let req: CoverageReportRequest =
+                        serde_json::from_value(serde_json::Value::Object(arguments.clone()))
+                            .map_err(|e| {
+                                rmcp::ErrorData::invalid_params(
+                                    format!("invalid coverage_report request: {}", e),
+                                    None,
+                                )
+                            })?;
+                    self.coverage_report_impl(req)
+                        .map_err(|e| rmcp::ErrorData::internal_error(e, None))?
+                }
+                "wave_value" => {
+                    let req: WaveValueRequest =
+                        serde_json::from_value(serde_json::Value::Object(arguments.clone()))
+                            .map_err(|e| {
+                                rmcp::ErrorData::invalid_params(
+                                    format!("invalid wave_value request: {}", e),
+                                    None,
+                                )
+                            })?;
+                    self.wave_value_impl(req)
+                        .map_err(|e| rmcp::ErrorData::internal_error(e, None))?
+                }
+                _ => {
+                    return Err(rmcp::ErrorData::invalid_params(
+                        format!("unknown tool: {}", name),
+                        None,
+                    ))
+                }
+            };
 
         Ok(CallToolResult::success(vec![Content::text(result_text)]))
     }

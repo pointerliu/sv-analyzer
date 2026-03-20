@@ -5,6 +5,7 @@ use anyhow::Result;
 
 use crate::block::{Block, BlockSet, CircuitType};
 use crate::coverage::CoverageTracker;
+use crate::error::{FuzzyMatch, SignalNotFound};
 use crate::slicer::{BlockEdgeJson, BlockJson, InstructionExecutionPath, SliceRequest, Slicer};
 use crate::types::{BlockId, SignalNode, TimedSliceNode, Timestamp};
 
@@ -41,10 +42,17 @@ impl BluesSlicer {
     pub fn slice(&self, request: &SliceRequest) -> Result<InstructionExecutionPath> {
         if self.block_set.drivers_for(&request.signal).is_empty() {
             let signal_name = request.signal.as_str();
-            anyhow::bail!(
-                "signal '{}' not found in block set. Provide hierarchical name (e.g., 'TOP.module.signal')",
-                signal_name
-            );
+            let candidates: Vec<String> = self
+                .block_set
+                .signal_names()
+                .map(|s| s.name.clone())
+                .collect();
+            let suggestions = FuzzyMatch::find_top_n(signal_name, &candidates);
+            return Err(SignalNotFound {
+                signal: signal_name.to_string(),
+                suggestions,
+            }
+            .into());
         }
 
         let mut work = VecDeque::from([(request.signal.clone(), request.time)]);

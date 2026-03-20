@@ -6,6 +6,7 @@ use crate::coverage::CoverageTracker;
 use crate::coverage::{
     assignment_statement_coverage_report, StatementCoverageReport, VcdCoverageTracker,
 };
+use crate::error::{FuzzyMatch, SignalNotFound};
 use crate::slicer::SliceRequest;
 use crate::slicer::{BluesSlicer, StaticSlicer};
 use crate::types::{SignalNode, Timestamp};
@@ -118,9 +119,19 @@ pub fn coverage_report(req: CoverageReportRequest) -> Result<StatementCoverageRe
     Ok(report)
 }
 
-pub fn wave_value(req: WaveValueRequest) -> Result<Option<crate::wave::SignalValue>> {
+pub fn wave_value(req: WaveValueRequest) -> Result<crate::wave::SignalValue> {
     let reader = WellenReader::open(&req.vcd)?;
-    let signal = SignalNode::named(req.signal);
-    let value = reader.signal_value_at(&signal, Timestamp(req.time))?;
+    let signal_name = req.signal.clone();
+    let signal = SignalNode::named(signal_name.clone());
+    let value = reader
+        .signal_value_at(&signal, Timestamp(req.time))?
+        .ok_or_else(|| {
+            let candidates: Vec<String> = reader.signal_names().map(|s| s.to_string()).collect();
+            let suggestions = FuzzyMatch::find_top_n(&signal_name, &candidates);
+            SignalNotFound {
+                signal: signal_name,
+                suggestions,
+            }
+        })?;
     Ok(value)
 }

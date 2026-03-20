@@ -71,6 +71,10 @@ impl BlockSet {
         &self.signal_to_drivers
     }
 
+    pub fn signal_names(&self) -> impl Iterator<Item = &SignalNode> {
+        self.signal_to_drivers.keys()
+    }
+
     pub fn drivers_for(&self, signal: &SignalNode) -> &[BlockId] {
         self.signal_to_drivers
             .get(signal)
