@@ -43,7 +43,7 @@ struct CoverageArgs {
 struct SliceArgs {
     #[arg(long = "sv", required = true)]
     sv_files: Vec<PathBuf>,
-    #[arg(long)]
+    #[arg(long, help = "hierarchical signal name (e.g. tb.dut.u_stage3.result)")]
     signal: String,
     #[arg(long)]
     vcd: Option<PathBuf>,
@@ -63,7 +63,7 @@ struct SliceArgs {
 struct WaveArgs {
     #[arg(long)]
     vcd: PathBuf,
-    #[arg(long)]
+    #[arg(long, help = "hierarchical signal name (e.g. tb.dut.u_stage3.result)")]
     signal: String,
     #[arg(long)]
     time: i64,

@@ -8,6 +8,7 @@ pub struct BlockizeParams {
 #[derive(Debug, Deserialize)]
 pub struct SliceParams {
     pub sv_files: Vec<String>,
+    /// Hierarchical signal name, e.g. "tb.dut.u_stage3.result"
     pub signal: String,
     #[serde(default)]
     pub vcd: Option<String>,
@@ -33,6 +34,7 @@ pub struct CoverageParams {
 #[derive(Debug, Deserialize)]
 pub struct WaveParams {
     pub vcd: String,
+    /// Hierarchical signal name, e.g. "tb.dut.u_stage3.result"
     pub signal: String,
     pub time: i64,
 }

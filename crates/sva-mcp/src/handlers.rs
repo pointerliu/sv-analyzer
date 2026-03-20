@@ -17,7 +17,7 @@ pub struct BlockizeRequest {
 pub struct StaticSliceRequest {
     #[schemars(description = "paths to SV files")]
     pub sv_files: Vec<String>,
-    #[schemars(description = "signal name to slice from")]
+    #[schemars(description = "hierarchical signal name (e.g. 'tb.dut.u_stage3.result')")]
     pub signal: String,
 }
 
@@ -25,7 +25,7 @@ pub struct StaticSliceRequest {
 pub struct DynamicSliceRequest {
     #[schemars(description = "paths to SV files")]
     pub sv_files: Vec<String>,
-    #[schemars(description = "signal name to slice from")]
+    #[schemars(description = "hierarchical signal name (e.g. 'tb.dut.u_stage3.result')")]
     pub signal: String,
     #[schemars(description = "path to VCD waveform file")]
     pub vcd: String,
@@ -35,7 +35,7 @@ pub struct DynamicSliceRequest {
     pub min_time: i64,
     #[schemars(description = "clock signal name", default)]
     pub clock: Option<String>,
-    #[schemars(description = "clock period", default)]
+    #[schemars(description = "clock period (i.e., time interval between two posedge clock)", default)]
     pub clk_step: Option<i64>,
 }
 
@@ -53,7 +53,7 @@ pub struct CoverageReportRequest {
 pub struct WaveValueRequest {
     #[schemars(description = "path to VCD waveform file")]
     pub vcd: String,
-    #[schemars(description = "signal name")]
+    #[schemars(description = "hierarchical signal name (e.g. 'tb.dut.u_stage3.result')")]
     pub signal: String,
     #[schemars(description = "time to read")]
     pub time: i64,
@@ -187,7 +187,7 @@ impl ServerHandler for SvaMcpServer {
             "signal".to_string(),
             serde_json::json!({
                 "type": "string",
-                "description": "signal name to slice from"
+                "description": "hierarchical signal name (e.g. 'tb.dut.u_stage3.result')"
             }),
         );
         let slice_static_schema = build_input_schema(props);
@@ -205,7 +205,7 @@ impl ServerHandler for SvaMcpServer {
             "signal".to_string(),
             serde_json::json!({
                 "type": "string",
-                "description": "signal name to slice from"
+                "description": "hierarchical signal name (e.g. 'tb.dut.u_stage3.result')"
             }),
         );
         props.insert(
@@ -240,7 +240,7 @@ impl ServerHandler for SvaMcpServer {
             "clk_step".to_string(),
             serde_json::json!({
                 "type": "integer",
-                "description": "clock period (optional)"
+                "description": "clock period (i.e., time interval between two posedge clock) (optional)"
             }),
         );
         let slice_dynamic_schema = build_input_schema(props);
@@ -282,7 +282,7 @@ impl ServerHandler for SvaMcpServer {
             "signal".to_string(),
             serde_json::json!({
                 "type": "string",
-                "description": "signal name"
+                "description": "hierarchical signal name (e.g. 'tb.dut.u_stage3.result')"
             }),
         );
         props.insert(
