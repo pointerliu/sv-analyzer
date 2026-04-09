@@ -1,6 +1,7 @@
 use crate::protocol::{JsonRpcError, JsonRpcResponse};
 use crate::types::{BlockizeParams, CoverageParams, SliceParams, WaveParams};
 use serde_json::Value;
+use sva_core::ast::ParseOptions;
 use sva_core::services::{
     blockize, coverage_report, slice_dynamic, slice_static, wave_value, BlockizeRequest,
     CoverageReportRequest, DynamicSliceRequest, StaticSliceRequest, WaveValueRequest,
@@ -56,6 +57,7 @@ fn handle_blockize(params: Option<Value>) -> JsonRpcResponse {
             .iter()
             .map(std::path::PathBuf::from)
             .collect(),
+        parse_options: parse_options(params.project_path, params.include_paths),
     };
     match blockize(req) {
         Ok(result) => JsonRpcResponse {
@@ -81,6 +83,7 @@ fn handle_slice(params: Option<Value>) -> JsonRpcResponse {
                 .iter()
                 .map(std::path::PathBuf::from)
                 .collect(),
+            parse_options: parse_options(params.project_path, params.include_paths),
             signal: params.signal,
         };
         match slice_static(req) {
@@ -112,6 +115,7 @@ fn handle_slice(params: Option<Value>) -> JsonRpcResponse {
                 .iter()
                 .map(std::path::PathBuf::from)
                 .collect(),
+            parse_options: parse_options(params.project_path, params.include_paths),
             signal: params.signal,
             vcd: std::path::PathBuf::from(vcd.clone()),
             time,
@@ -142,6 +146,7 @@ fn handle_coverage(params: Option<Value>) -> JsonRpcResponse {
             .iter()
             .map(std::path::PathBuf::from)
             .collect(),
+        parse_options: parse_options(params.project_path, params.include_paths),
         vcd: std::path::PathBuf::from(params.vcd),
         time: params.time,
     };
@@ -196,5 +201,15 @@ fn internal_error(e: anyhow::Error) -> JsonRpcResponse {
         id: None,
         result: None,
         error: Some(JsonRpcError::internal(e.to_string())),
+    }
+}
+
+fn parse_options(project_path: Option<String>, include_paths: Vec<String>) -> ParseOptions {
+    ParseOptions {
+        project_path: project_path.map(std::path::PathBuf::from),
+        include_paths: include_paths
+            .into_iter()
+            .map(std::path::PathBuf::from)
+            .collect(),
     }
 }

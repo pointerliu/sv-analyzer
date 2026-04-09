@@ -28,6 +28,8 @@ fn block_node_and_graph_dtos_serialize_as_expected() {
             source_file: "design.sv".into(),
             line_start: 12,
             line_end: 14,
+            ast_line_start: 12,
+            ast_line_end: 14,
             code_snippet: "always_ff @(posedge clk) q <= d;".into(),
         }],
     };
@@ -59,6 +61,7 @@ fn block_node_and_graph_dtos_serialize_as_expected() {
                             "locate": {
                                 "offset": 0,
                                 "line": 0,
+                                "ast_line": 0,
                                 "len": 4
                             }
                         },
@@ -74,6 +77,8 @@ fn block_node_and_graph_dtos_serialize_as_expected() {
                     "source_file": "design.sv",
                     "line_start": 12,
                     "line_end": 14,
+                    "ast_line_start": 12,
+                    "ast_line_end": 14,
                     "code_snippet": "always_ff @(posedge clk) q <= d;"
                 }
             ]

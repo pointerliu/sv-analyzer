@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
+use sva_core::ast::ParseOptions;
 use sva_core::services::{
     blockize, coverage_report, slice_dynamic, slice_static, wave_value, BlockizeRequest,
     CoverageReportRequest, DynamicSliceRequest, StaticSliceRequest, WaveValueRequest,
@@ -25,14 +26,30 @@ enum Commands {
 
 #[derive(Debug, Args)]
 struct BlockizeArgs {
-    #[arg(long = "sv", required = true)]
+    #[arg(long = "sv")]
     sv_files: Vec<PathBuf>,
+    #[arg(long, help = "Directory of .sv sources to parse recursively")]
+    project_path: Option<PathBuf>,
+    #[arg(
+        long,
+        value_delimiter = ',',
+        help = "Comma-separated include paths for sv_parser"
+    )]
+    include_paths: Vec<PathBuf>,
 }
 
 #[derive(Debug, Args)]
 struct CoverageArgs {
-    #[arg(long = "sv", required = true)]
+    #[arg(long = "sv")]
     sv_files: Vec<PathBuf>,
+    #[arg(long, help = "Directory of .sv sources to parse recursively")]
+    project_path: Option<PathBuf>,
+    #[arg(
+        long,
+        value_delimiter = ',',
+        help = "Comma-separated include paths for sv_parser"
+    )]
+    include_paths: Vec<PathBuf>,
     #[arg(long)]
     vcd: PathBuf,
     #[arg(long)]
@@ -41,8 +58,16 @@ struct CoverageArgs {
 
 #[derive(Debug, Args)]
 struct SliceArgs {
-    #[arg(long = "sv", required = true)]
+    #[arg(long = "sv")]
     sv_files: Vec<PathBuf>,
+    #[arg(long, help = "Directory of .sv sources to parse recursively")]
+    project_path: Option<PathBuf>,
+    #[arg(
+        long,
+        value_delimiter = ',',
+        help = "Comma-separated include paths for sv_parser"
+    )]
+    include_paths: Vec<PathBuf>,
     #[arg(long, help = "hierarchical signal name (e.g. tb.dut.u_stage3.result)")]
     signal: String,
     #[arg(long)]
@@ -82,6 +107,7 @@ fn main() -> Result<()> {
 fn run_blockize(args: BlockizeArgs) -> Result<()> {
     let block_set = blockize(BlockizeRequest {
         sv_files: args.sv_files,
+        parse_options: parse_options(args.project_path, args.include_paths),
     })?;
     println!("{}", serde_json::to_string_pretty(&block_set)?);
     Ok(())
@@ -90,6 +116,7 @@ fn run_blockize(args: BlockizeArgs) -> Result<()> {
 fn run_coverage(args: CoverageArgs) -> Result<()> {
     let report = coverage_report(CoverageReportRequest {
         sv_files: args.sv_files,
+        parse_options: parse_options(args.project_path, args.include_paths),
         vcd: args.vcd,
         time: args.time,
     })?;
@@ -108,6 +135,7 @@ fn run_slice(args: SliceArgs) -> Result<()> {
 fn run_static_slice(args: SliceArgs) -> Result<()> {
     let stable_json = slice_static(StaticSliceRequest {
         sv_files: args.sv_files,
+        parse_options: parse_options(args.project_path, args.include_paths),
         signal: args.signal,
     })?;
     println!("{}", serde_json::to_string_pretty(&stable_json)?);
@@ -115,6 +143,7 @@ fn run_static_slice(args: SliceArgs) -> Result<()> {
 }
 
 fn run_blues(args: SliceArgs) -> Result<()> {
+    let parse_options = parse_options(args.project_path, args.include_paths);
     let vcd = args
         .vcd
         .ok_or_else(|| anyhow::anyhow!("--vcd is required unless --static is set"))?;
@@ -127,6 +156,7 @@ fn run_blues(args: SliceArgs) -> Result<()> {
 
     let stable_json = slice_dynamic(DynamicSliceRequest {
         sv_files: args.sv_files,
+        parse_options,
         signal: args.signal,
         vcd,
         time,
@@ -165,4 +195,11 @@ fn run_wave(args: WaveArgs) -> Result<()> {
     };
     println!("{}", serde_json::to_string_pretty(&output)?);
     Ok(())
+}
+
+fn parse_options(project_path: Option<PathBuf>, include_paths: Vec<PathBuf>) -> ParseOptions {
+    ParseOptions {
+        project_path,
+        include_paths,
+    }
 }

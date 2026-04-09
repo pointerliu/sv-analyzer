@@ -114,6 +114,8 @@ pub struct Block {
     source_file: String,
     line_start: usize,
     line_end: usize,
+    ast_line_start: usize,
+    ast_line_end: usize,
     #[serde(serialize_with = "serialize_signal_name_set")]
     input_signals: HashSet<SignalNode>,
     #[serde(serialize_with = "serialize_signal_name_set")]
@@ -135,6 +137,35 @@ impl Block {
         dataflow: Vec<DataflowEntry>,
         code_snippet: impl Into<String>,
     ) -> Result<Self> {
+        Self::new_with_ast_lines(
+            id,
+            block_type,
+            circuit_type,
+            module_scope,
+            source_file,
+            line_start,
+            line_end,
+            line_start,
+            line_end,
+            dataflow,
+            code_snippet,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_ast_lines(
+        id: BlockId,
+        block_type: BlockType,
+        circuit_type: CircuitType,
+        module_scope: impl Into<String>,
+        source_file: impl Into<String>,
+        line_start: usize,
+        line_end: usize,
+        ast_line_start: usize,
+        ast_line_end: usize,
+        dataflow: Vec<DataflowEntry>,
+        code_snippet: impl Into<String>,
+    ) -> Result<Self> {
         let input_signals = dataflow
             .iter()
             .flat_map(|entry| entry.inputs.iter().cloned())
@@ -144,7 +175,7 @@ impl Block {
             .flat_map(|entry| entry.output.iter().cloned())
             .collect();
 
-        Self::with_signals(
+        Self::with_signals_and_ast_lines(
             id,
             block_type,
             circuit_type,
@@ -152,6 +183,8 @@ impl Block {
             source_file,
             line_start,
             line_end,
+            ast_line_start,
+            ast_line_end,
             input_signals,
             output_signals,
             dataflow,
@@ -173,8 +206,45 @@ impl Block {
         dataflow: Vec<DataflowEntry>,
         code_snippet: impl Into<String>,
     ) -> Result<Self> {
+        Self::with_signals_and_ast_lines(
+            id,
+            block_type,
+            circuit_type,
+            module_scope,
+            source_file,
+            line_start,
+            line_end,
+            line_start,
+            line_end,
+            input_signals,
+            output_signals,
+            dataflow,
+            code_snippet,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_signals_and_ast_lines(
+        id: BlockId,
+        block_type: BlockType,
+        circuit_type: CircuitType,
+        module_scope: impl Into<String>,
+        source_file: impl Into<String>,
+        line_start: usize,
+        line_end: usize,
+        ast_line_start: usize,
+        ast_line_end: usize,
+        input_signals: HashSet<SignalNode>,
+        output_signals: HashSet<SignalNode>,
+        dataflow: Vec<DataflowEntry>,
+        code_snippet: impl Into<String>,
+    ) -> Result<Self> {
         if line_start > line_end {
             bail!("block line range is invalid");
+        }
+
+        if ast_line_start > ast_line_end {
+            bail!("block AST line range is invalid");
         }
 
         let derived_input_signals: HashSet<_> = dataflow
@@ -202,6 +272,8 @@ impl Block {
             source_file: source_file.into(),
             line_start,
             line_end,
+            ast_line_start,
+            ast_line_end,
             input_signals,
             output_signals,
             dataflow,
@@ -235,6 +307,14 @@ impl Block {
 
     pub fn line_end(&self) -> usize {
         self.line_end
+    }
+
+    pub fn ast_line_start(&self) -> usize {
+        self.ast_line_start
+    }
+
+    pub fn ast_line_end(&self) -> usize {
+        self.ast_line_end
     }
 
     pub fn input_signals(&self) -> &HashSet<SignalNode> {

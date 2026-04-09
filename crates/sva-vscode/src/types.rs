@@ -3,11 +3,19 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 pub struct BlockizeParams {
     pub sv_files: Vec<String>,
+    #[serde(default)]
+    pub project_path: Option<String>,
+    #[serde(default)]
+    pub include_paths: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct SliceParams {
     pub sv_files: Vec<String>,
+    #[serde(default)]
+    pub project_path: Option<String>,
+    #[serde(default)]
+    pub include_paths: Vec<String>,
     /// Hierarchical signal name, e.g. "tb.dut.u_stage3.result"
     pub signal: String,
     #[serde(default)]
@@ -27,6 +35,10 @@ pub struct SliceParams {
 #[derive(Debug, Deserialize)]
 pub struct CoverageParams {
     pub sv_files: Vec<String>,
+    #[serde(default)]
+    pub project_path: Option<String>,
+    #[serde(default)]
+    pub include_paths: Vec<String>,
     pub vcd: String,
     pub time: i64,
 }

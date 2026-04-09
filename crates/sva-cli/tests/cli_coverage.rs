@@ -5,12 +5,7 @@ use std::process::Command;
 use serde_json::Value;
 
 fn main_bin() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("target")
-        .join("debug")
-        .join("dataflow-engine")
+    std::path::PathBuf::from(env!("CARGO_BIN_EXE_sva_cli"))
 }
 
 fn workspace_root() -> PathBuf {

@@ -6,17 +6,30 @@ use rmcp::ServerHandler;
 use serde::Deserialize;
 use serde_json::Map;
 use std::sync::Arc;
+use sva_core::ast::ParseOptions;
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct BlockizeRequest {
     #[schemars(description = "paths to SV files")]
     pub sv_files: Vec<String>,
+    #[serde(default)]
+    #[schemars(description = "directory of .sv sources to parse recursively", default)]
+    pub project_path: Option<String>,
+    #[serde(default)]
+    #[schemars(description = "include search paths for sv_parser", default)]
+    pub include_paths: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct StaticSliceRequest {
     #[schemars(description = "paths to SV files")]
     pub sv_files: Vec<String>,
+    #[serde(default)]
+    #[schemars(description = "directory of .sv sources to parse recursively", default)]
+    pub project_path: Option<String>,
+    #[serde(default)]
+    #[schemars(description = "include search paths for sv_parser", default)]
+    pub include_paths: Vec<String>,
     #[schemars(description = "hierarchical signal name (e.g. 'tb.dut.u_stage3.result')")]
     pub signal: String,
 }
@@ -25,6 +38,12 @@ pub struct StaticSliceRequest {
 pub struct DynamicSliceRequest {
     #[schemars(description = "paths to SV files")]
     pub sv_files: Vec<String>,
+    #[serde(default)]
+    #[schemars(description = "directory of .sv sources to parse recursively", default)]
+    pub project_path: Option<String>,
+    #[serde(default)]
+    #[schemars(description = "include search paths for sv_parser", default)]
+    pub include_paths: Vec<String>,
     #[schemars(description = "hierarchical signal name (e.g. 'tb.dut.u_stage3.result')")]
     pub signal: String,
     #[schemars(description = "path to VCD waveform file")]
@@ -46,6 +65,12 @@ pub struct DynamicSliceRequest {
 pub struct CoverageReportRequest {
     #[schemars(description = "paths to SV files")]
     pub sv_files: Vec<String>,
+    #[serde(default)]
+    #[schemars(description = "directory of .sv sources to parse recursively", default)]
+    pub project_path: Option<String>,
+    #[serde(default)]
+    #[schemars(description = "include search paths for sv_parser", default)]
+    pub include_paths: Vec<String>,
     #[schemars(description = "path to VCD waveform file")]
     pub vcd: String,
     #[schemars(description = "time to evaluate at")]
@@ -72,8 +97,19 @@ impl SvaMcpServer {
             .into_iter()
             .map(std::path::PathBuf::from)
             .collect();
-        let result = sva_core::services::blockize(sva_core::services::BlockizeRequest { sv_files })
-            .map_err(|e| e.to_string())?;
+        let parse_options = ParseOptions {
+            project_path: req.project_path.map(std::path::PathBuf::from),
+            include_paths: req
+                .include_paths
+                .into_iter()
+                .map(std::path::PathBuf::from)
+                .collect(),
+        };
+        let result = sva_core::services::blockize(sva_core::services::BlockizeRequest {
+            sv_files,
+            parse_options,
+        })
+        .map_err(|e| e.to_string())?;
         serde_json::to_string_pretty(&result).map_err(|e| e.to_string())
     }
 
@@ -83,8 +119,17 @@ impl SvaMcpServer {
             .into_iter()
             .map(std::path::PathBuf::from)
             .collect();
+        let parse_options = ParseOptions {
+            project_path: req.project_path.map(std::path::PathBuf::from),
+            include_paths: req
+                .include_paths
+                .into_iter()
+                .map(std::path::PathBuf::from)
+                .collect(),
+        };
         let result = sva_core::services::slice_static(sva_core::services::StaticSliceRequest {
             sv_files,
+            parse_options,
             signal: req.signal,
         })
         .map_err(|e| e.to_string())?;
@@ -97,8 +142,17 @@ impl SvaMcpServer {
             .into_iter()
             .map(std::path::PathBuf::from)
             .collect();
+        let parse_options = ParseOptions {
+            project_path: req.project_path.map(std::path::PathBuf::from),
+            include_paths: req
+                .include_paths
+                .into_iter()
+                .map(std::path::PathBuf::from)
+                .collect(),
+        };
         let result = sva_core::services::slice_dynamic(sva_core::services::DynamicSliceRequest {
             sv_files,
+            parse_options,
             signal: req.signal,
             vcd: std::path::PathBuf::from(req.vcd),
             time: req.time,
@@ -116,9 +170,18 @@ impl SvaMcpServer {
             .into_iter()
             .map(std::path::PathBuf::from)
             .collect();
+        let parse_options = ParseOptions {
+            project_path: req.project_path.map(std::path::PathBuf::from),
+            include_paths: req
+                .include_paths
+                .into_iter()
+                .map(std::path::PathBuf::from)
+                .collect(),
+        };
         let result =
             sva_core::services::coverage_report(sva_core::services::CoverageReportRequest {
                 sv_files,
+                parse_options,
                 vcd: std::path::PathBuf::from(req.vcd),
                 time: req.time,
             })
@@ -169,6 +232,21 @@ impl ServerHandler for SvaMcpServer {
                 "description": "paths to SV files"
             }),
         );
+        props.insert(
+            "project_path".to_string(),
+            serde_json::json!({
+                "type": "string",
+                "description": "directory of .sv sources to parse recursively"
+            }),
+        );
+        props.insert(
+            "include_paths".to_string(),
+            serde_json::json!({
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "include search paths for sv_parser"
+            }),
+        );
         let blockize_schema = build_input_schema(props);
 
         let mut props = Map::new();
@@ -178,6 +256,21 @@ impl ServerHandler for SvaMcpServer {
                 "type": "array",
                 "items": { "type": "string" },
                 "description": "paths to SV files"
+            }),
+        );
+        props.insert(
+            "project_path".to_string(),
+            serde_json::json!({
+                "type": "string",
+                "description": "directory of .sv sources to parse recursively"
+            }),
+        );
+        props.insert(
+            "include_paths".to_string(),
+            serde_json::json!({
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "include search paths for sv_parser"
             }),
         );
         props.insert(
@@ -196,6 +289,21 @@ impl ServerHandler for SvaMcpServer {
                 "type": "array",
                 "items": { "type": "string" },
                 "description": "paths to SV files"
+            }),
+        );
+        props.insert(
+            "project_path".to_string(),
+            serde_json::json!({
+                "type": "string",
+                "description": "directory of .sv sources to parse recursively"
+            }),
+        );
+        props.insert(
+            "include_paths".to_string(),
+            serde_json::json!({
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "include search paths for sv_parser"
             }),
         );
         props.insert(
@@ -249,6 +357,21 @@ impl ServerHandler for SvaMcpServer {
                 "type": "array",
                 "items": { "type": "string" },
                 "description": "paths to SV files"
+            }),
+        );
+        props.insert(
+            "project_path".to_string(),
+            serde_json::json!({
+                "type": "string",
+                "description": "directory of .sv sources to parse recursively"
+            }),
+        );
+        props.insert(
+            "include_paths".to_string(),
+            serde_json::json!({
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "include search paths for sv_parser"
             }),
         );
         props.insert(

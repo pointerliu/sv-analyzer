@@ -119,6 +119,8 @@ impl StaticSlicer {
                     source_file: block.source_file().to_string(),
                     line_start: block.line_start(),
                     line_end: block.line_end(),
+                    ast_line_start: block.ast_line_start(),
+                    ast_line_end: block.ast_line_end(),
                     code_snippet: block.code_snippet().to_string(),
                 })
                 .collect(),

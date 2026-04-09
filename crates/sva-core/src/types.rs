@@ -13,6 +13,7 @@ pub struct Timestamp(pub i64);
 pub struct SignalLocate {
     pub offset: usize,
     pub line: usize,
+    pub ast_line: usize,
     pub len: usize,
 }
 
@@ -21,8 +22,13 @@ impl SignalLocate {
         Self {
             offset: 0,
             line: 0,
+            ast_line: 0,
             len,
         }
+    }
+
+    pub fn is_unknown(&self) -> bool {
+        self.offset == 0 && self.line == 0 && self.ast_line == 0
     }
 }
 
@@ -169,6 +175,8 @@ pub struct BlockJson {
     pub source_file: String,
     pub line_start: usize,
     pub line_end: usize,
+    pub ast_line_start: usize,
+    pub ast_line_end: usize,
     pub code_snippet: String,
 }
 

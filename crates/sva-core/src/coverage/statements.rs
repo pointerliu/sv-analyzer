@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::ast::ParsedFile;
+use crate::ast::{row_from_span, ParsedFile};
 use crate::block::Blockizer;
 use crate::block::{Block, BlockType, CircuitType, DataflowBlockizer};
 use crate::types::{SignalNode, Timestamp};
@@ -426,8 +426,13 @@ fn collect_block_triggers(
                 always_construct,
             )) = event
             {
-                let line_start = locate_line_from_node(always_construct.into()).unwrap_or(1);
-                let line_end = statement_end_line(&always_construct.nodes.1).unwrap_or(line_start);
+                let line_start =
+                    always_start_line(&file.source_text, always_construct).unwrap_or(1);
+                let source_line_offset = line_start as isize
+                    - always_ast_line(always_construct).unwrap_or(line_start) as isize;
+                let line_end = statement_end_ast_line(&always_construct.nodes.1)
+                    .map(|line| source_line_from_ast(line, source_line_offset))
+                    .unwrap_or(line_start);
                 triggers_by_block.insert(
                     (normalized_file.clone(), line_start, line_end),
                     always_construct_triggers(&file.syntax_tree, always_construct),
@@ -607,11 +612,15 @@ fn collect_assignment_guards(parsed_files: &[ParsedFile]) -> HashMap<(String, us
                 always_construct,
             )) = event
             {
+                let source_line_offset = always_start_line(&file.source_text, always_construct)
+                    .unwrap_or(1) as isize
+                    - always_ast_line(always_construct).unwrap_or(1) as isize;
                 let mut guards = Vec::new();
                 collect_statement_guards(
                     &file.syntax_tree,
                     &always_construct.nodes.1,
                     &mut guards,
+                    source_line_offset,
                     &normalized_file,
                     &mut guards_by_line,
                 );
@@ -626,30 +635,52 @@ fn collect_statement_guards(
     syntax_tree: &sv_parser::SyntaxTree,
     statement: &sv_parser::Statement,
     guards: &mut Vec<Guard>,
+    source_line_offset: isize,
     file: &str,
     guards_by_line: &mut HashMap<(String, usize), Vec<Guard>>,
 ) {
     match &statement.nodes.2 {
         sv_parser::StatementItem::BlockingAssignment(_)
         | sv_parser::StatementItem::NonblockingAssignment(_) => {
-            let line = statement_assignment_line(&statement.nodes.2).unwrap_or(0);
+            let line =
+                statement_assignment_line(source_line_offset, &statement.nodes.2).unwrap_or(0);
             if line != 0 {
                 guards_by_line.insert((file.to_string(), line), guards.clone());
             }
         }
         sv_parser::StatementItem::SeqBlock(block) => {
             for declaration in &block.nodes.2 {
-                collect_block_item_declaration_guards(declaration, guards, file, guards_by_line);
+                collect_block_item_declaration_guards(
+                    declaration,
+                    guards,
+                    source_line_offset,
+                    file,
+                    guards_by_line,
+                );
             }
             for statement in &block.nodes.3 {
                 if let sv_parser::StatementOrNull::Statement(statement) = statement {
-                    collect_statement_guards(syntax_tree, statement, guards, file, guards_by_line);
+                    collect_statement_guards(
+                        syntax_tree,
+                        statement,
+                        guards,
+                        source_line_offset,
+                        file,
+                        guards_by_line,
+                    );
                 }
             }
         }
         sv_parser::StatementItem::ProceduralTimingControlStatement(statement) => {
             if let sv_parser::StatementOrNull::Statement(statement) = &statement.nodes.1 {
-                collect_statement_guards(syntax_tree, statement, guards, file, guards_by_line);
+                collect_statement_guards(
+                    syntax_tree,
+                    statement,
+                    guards,
+                    source_line_offset,
+                    file,
+                    guards_by_line,
+                );
             }
         }
         sv_parser::StatementItem::ConditionalStatement(conditional) => {
@@ -661,7 +692,14 @@ fn collect_statement_guards(
 
             guards.push(Guard::Predicate(predicate.clone()));
             if let sv_parser::StatementOrNull::Statement(statement) = &conditional.nodes.3 {
-                collect_statement_guards(syntax_tree, statement, guards, file, guards_by_line);
+                collect_statement_guards(
+                    syntax_tree,
+                    statement,
+                    guards,
+                    source_line_offset,
+                    file,
+                    guards_by_line,
+                );
             }
             guards.pop();
 
@@ -677,7 +715,14 @@ fn collect_statement_guards(
                 }
                 guards.push(Guard::Predicate(predicate.clone()));
                 if let sv_parser::StatementOrNull::Statement(statement) = statement {
-                    collect_statement_guards(syntax_tree, statement, guards, file, guards_by_line);
+                    collect_statement_guards(
+                        syntax_tree,
+                        statement,
+                        guards,
+                        source_line_offset,
+                        file,
+                        guards_by_line,
+                    );
                 }
                 guards.pop();
                 for _ in &prior {
@@ -691,7 +736,14 @@ fn collect_statement_guards(
                     guards.push(Guard::NotPredicate(previous.clone()));
                 }
                 if let sv_parser::StatementOrNull::Statement(statement) = statement {
-                    collect_statement_guards(syntax_tree, statement, guards, file, guards_by_line);
+                    collect_statement_guards(
+                        syntax_tree,
+                        statement,
+                        guards,
+                        source_line_offset,
+                        file,
+                        guards_by_line,
+                    );
                 }
                 for _ in &prior {
                     guards.pop();
@@ -734,6 +786,7 @@ fn collect_statement_guards(
                                 syntax_tree,
                                 statement,
                                 guards,
+                                source_line_offset,
                                 file,
                                 guards_by_line,
                             );
@@ -751,6 +804,7 @@ fn collect_statement_guards(
                                 syntax_tree,
                                 statement,
                                 guards,
+                                source_line_offset,
                                 file,
                                 guards_by_line,
                             );
@@ -767,6 +821,7 @@ fn collect_statement_guards(
 fn collect_block_item_declaration_guards(
     declaration: &sv_parser::BlockItemDeclaration,
     guards: &[Guard],
+    source_line_offset: isize,
     file: &str,
     guards_by_line: &mut HashMap<(String, usize), Vec<Guard>>,
 ) {
@@ -781,7 +836,9 @@ fn collect_block_item_declaration_guards(
         let sv_parser::VariableDeclAssignment::Variable(assignment) = assignment else {
             continue;
         };
-        let line = locate_line_from_node((&assignment.nodes.0).into()).unwrap_or(0);
+        let line = locate_ast_line_from_node((&assignment.nodes.0).into())
+            .map(|line| source_line_from_ast(line, source_line_offset))
+            .unwrap_or(0);
         if line != 0 {
             guards_by_line.insert((file.to_string(), line), guards.to_vec());
         }
@@ -867,39 +924,130 @@ fn normalize_file_key(file: &str) -> String {
         .to_string()
 }
 
-fn statement_assignment_line(statement: &sv_parser::StatementItem) -> Option<usize> {
+fn always_start_line(
+    source_text: &str,
+    always_construct: &sv_parser::AlwaysConstruct,
+) -> Option<usize> {
+    match &always_construct.nodes.0 {
+        sv_parser::AlwaysKeyword::Always(keyword) => {
+            keyword_source_line(source_text, keyword, "always")
+        }
+        sv_parser::AlwaysKeyword::AlwaysComb(keyword) => {
+            keyword_source_line(source_text, keyword, "always_comb")
+        }
+        sv_parser::AlwaysKeyword::AlwaysLatch(keyword) => {
+            keyword_source_line(source_text, keyword, "always_latch")
+        }
+        sv_parser::AlwaysKeyword::AlwaysFf(keyword) => {
+            keyword_source_line(source_text, keyword, "always_ff")
+        }
+    }
+}
+
+fn always_ast_line(always_construct: &sv_parser::AlwaysConstruct) -> Option<usize> {
+    match &always_construct.nodes.0 {
+        sv_parser::AlwaysKeyword::Always(keyword)
+        | sv_parser::AlwaysKeyword::AlwaysComb(keyword)
+        | sv_parser::AlwaysKeyword::AlwaysLatch(keyword)
+        | sv_parser::AlwaysKeyword::AlwaysFf(keyword) => usize::try_from(keyword.nodes.0.line).ok(),
+    }
+}
+
+fn keyword_source_line(
+    source_text: &str,
+    keyword: &sv_parser::Keyword,
+    token: &str,
+) -> Option<usize> {
+    let ast_line = usize::try_from(keyword.nodes.0.line).ok()?;
+    let aligned_ast_line = align_line_to_token(source_text, ast_line, token);
+    if line_contains_token(source_text, aligned_ast_line, token) {
+        return Some(aligned_ast_line);
+    }
+
+    let candidate = row_from_span(source_text, keyword.nodes.0.offset, keyword.nodes.0.len)?;
+    let aligned_candidate = align_line_to_token(source_text, candidate, token);
+    if line_contains_token(source_text, aligned_candidate, token)
+        && aligned_candidate.abs_diff(ast_line) <= 32
+    {
+        return Some(aligned_candidate);
+    }
+
+    Some(ast_line)
+}
+
+fn align_line_to_token(source_text: &str, candidate_line: usize, token: &str) -> usize {
+    if line_contains_token(source_text, candidate_line, token) {
+        return candidate_line;
+    }
+
+    for distance in 1..=2 {
+        let next_line = candidate_line + distance;
+        if line_contains_token(source_text, next_line, token) {
+            return next_line;
+        }
+
+        let prev_line = candidate_line.saturating_sub(distance);
+        if prev_line != 0 && line_contains_token(source_text, prev_line, token) {
+            return prev_line;
+        }
+    }
+
+    candidate_line
+}
+
+fn line_contains_token(source_text: &str, line_no: usize, token: &str) -> bool {
+    source_text
+        .lines()
+        .nth(line_no.saturating_sub(1))
+        .map(|line| line.contains(token))
+        .unwrap_or(false)
+}
+
+fn statement_assignment_line(
+    source_line_offset: isize,
+    statement: &sv_parser::StatementItem,
+) -> Option<usize> {
     match statement {
         sv_parser::StatementItem::BlockingAssignment(assignment) => {
-            blocking_assignment_line(&assignment.0)
+            blocking_assignment_line(source_line_offset, &assignment.0)
         }
         sv_parser::StatementItem::NonblockingAssignment(assignment) => {
-            variable_lvalue_line(&assignment.0.nodes.0)
+            variable_lvalue_line(source_line_offset, &assignment.0.nodes.0)
         }
         _ => None,
     }
 }
 
-fn blocking_assignment_line(assignment: &sv_parser::BlockingAssignment) -> Option<usize> {
+fn blocking_assignment_line(
+    source_line_offset: isize,
+    assignment: &sv_parser::BlockingAssignment,
+) -> Option<usize> {
     match assignment {
         sv_parser::BlockingAssignment::Variable(assignment) => {
-            variable_lvalue_line(&assignment.nodes.0)
+            variable_lvalue_line(source_line_offset, &assignment.nodes.0)
         }
         sv_parser::BlockingAssignment::OperatorAssignment(assignment) => {
-            variable_lvalue_line(&assignment.nodes.0)
+            variable_lvalue_line(source_line_offset, &assignment.nodes.0)
         }
         sv_parser::BlockingAssignment::HierarchicalVariable(assignment) => {
-            locate_line_from_node((&assignment.nodes.1).into())
+            locate_ast_line_from_node((&assignment.nodes.1).into())
+                .map(|line| source_line_from_ast(line, source_line_offset))
         }
         sv_parser::BlockingAssignment::NonrangeVariable(assignment) => {
-            locate_line_from_node((&assignment.nodes.1).into())
+            locate_ast_line_from_node((&assignment.nodes.1).into())
+                .map(|line| source_line_from_ast(line, source_line_offset))
         }
     }
 }
 
-fn variable_lvalue_line(lvalue: &sv_parser::VariableLvalue) -> Option<usize> {
+fn variable_lvalue_line(
+    source_line_offset: isize,
+    lvalue: &sv_parser::VariableLvalue,
+) -> Option<usize> {
     match lvalue {
         sv_parser::VariableLvalue::Identifier(identifier) => {
-            locate_line_from_node((&identifier.nodes.1).into())
+            locate_ast_line_from_node((&identifier.nodes.1).into())
+                .map(|line| source_line_from_ast(line, source_line_offset))
         }
         sv_parser::VariableLvalue::Lvalue(lvalues) => lvalues
             .nodes
@@ -908,59 +1056,67 @@ fn variable_lvalue_line(lvalue: &sv_parser::VariableLvalue) -> Option<usize> {
             .1
             .contents()
             .into_iter()
-            .find_map(variable_lvalue_line),
+            .find_map(|lvalue| variable_lvalue_line(source_line_offset, lvalue)),
         _ => None,
     }
 }
 
-fn locate_line_from_node(node: sv_parser::RefNode) -> Option<usize> {
+fn source_line_from_ast(ast_line: usize, source_line_offset: isize) -> usize {
+    (ast_line as isize + source_line_offset).max(1) as usize
+}
+
+fn locate_ast_line_from_node(node: sv_parser::RefNode) -> Option<usize> {
     sv_parser::unwrap_locate!(node).and_then(|loc| usize::try_from(loc.line).ok())
 }
 
-fn statement_end_line(statement: &sv_parser::Statement) -> Option<usize> {
+fn statement_end_ast_line(statement: &sv_parser::Statement) -> Option<usize> {
     match &statement.nodes.2 {
-        sv_parser::StatementItem::SeqBlock(block) => keyword_line(&block.nodes.4),
+        sv_parser::StatementItem::SeqBlock(block) => keyword_ast_line(&block.nodes.4),
         sv_parser::StatementItem::ProceduralTimingControlStatement(statement) => {
-            statement_or_null_end_line(&statement.nodes.1)
+            statement_or_null_end_ast_line(&statement.nodes.1)
         }
-        sv_parser::StatementItem::BlockingAssignment(assignment) => symbol_line(&assignment.1),
-        sv_parser::StatementItem::NonblockingAssignment(assignment) => symbol_line(&assignment.1),
+        sv_parser::StatementItem::BlockingAssignment(assignment) => symbol_ast_line(&assignment.1),
+        sv_parser::StatementItem::NonblockingAssignment(assignment) => {
+            symbol_ast_line(&assignment.1)
+        }
         sv_parser::StatementItem::ConditionalStatement(statement) => {
-            conditional_end_line(statement)
+            conditional_end_ast_line(statement)
         }
-        sv_parser::StatementItem::CaseStatement(statement) => case_statement_end_line(statement),
-        _ => locate_line_from_node(statement.into()),
+        sv_parser::StatementItem::CaseStatement(statement) => {
+            case_statement_end_ast_line(statement)
+        }
+        _ => locate_ast_line_from_node(statement.into()),
     }
 }
 
-fn statement_or_null_end_line(statement: &sv_parser::StatementOrNull) -> Option<usize> {
+fn statement_or_null_end_ast_line(statement: &sv_parser::StatementOrNull) -> Option<usize> {
     match statement {
-        sv_parser::StatementOrNull::Statement(statement) => statement_end_line(statement),
-        sv_parser::StatementOrNull::Attribute(attribute) => symbol_line(&attribute.nodes.1),
+        sv_parser::StatementOrNull::Statement(statement) => statement_end_ast_line(statement),
+        sv_parser::StatementOrNull::Attribute(attribute) => symbol_ast_line(&attribute.nodes.1),
     }
 }
 
-fn conditional_end_line(statement: &sv_parser::ConditionalStatement) -> Option<usize> {
+fn conditional_end_ast_line(statement: &sv_parser::ConditionalStatement) -> Option<usize> {
     if let Some((_, tail)) = &statement.nodes.5 {
-        return statement_or_null_end_line(tail);
+        return statement_or_null_end_ast_line(tail);
     }
     if let Some((_, _, _, tail)) = statement.nodes.4.last() {
-        return statement_or_null_end_line(tail);
+        return statement_or_null_end_ast_line(tail);
     }
-    statement_or_null_end_line(&statement.nodes.3)
+    statement_or_null_end_ast_line(&statement.nodes.3)
 }
 
-fn case_statement_end_line(statement: &sv_parser::CaseStatement) -> Option<usize> {
+fn case_statement_end_ast_line(statement: &sv_parser::CaseStatement) -> Option<usize> {
     match statement {
-        sv_parser::CaseStatement::Normal(statement) => keyword_line(&statement.nodes.5),
-        _ => locate_line_from_node(statement.into()),
+        sv_parser::CaseStatement::Normal(statement) => keyword_ast_line(&statement.nodes.5),
+        _ => locate_ast_line_from_node(statement.into()),
     }
 }
 
-fn keyword_line(keyword: &sv_parser::Keyword) -> Option<usize> {
+fn keyword_ast_line(keyword: &sv_parser::Keyword) -> Option<usize> {
     usize::try_from(keyword.nodes.0.line).ok()
 }
 
-fn symbol_line(symbol: &sv_parser::Symbol) -> Option<usize> {
+fn symbol_ast_line(symbol: &sv_parser::Symbol) -> Option<usize> {
     usize::try_from(symbol.nodes.0.line).ok()
 }

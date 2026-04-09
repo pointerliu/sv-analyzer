@@ -1,12 +1,7 @@
 use std::process::Command;
 
 fn main_bin() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("target")
-        .join("debug")
-        .join("dataflow-engine")
+    std::path::PathBuf::from(env!("CARGO_BIN_EXE_sva_cli"))
 }
 
 #[test]

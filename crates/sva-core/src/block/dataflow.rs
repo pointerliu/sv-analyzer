@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use sv_parser::{unwrap_locate, unwrap_node, RefNode};
 
 use super::{Block, BlockSet, BlockType, Blockizer, CircuitType, DataflowEntry};
-use crate::ast::ParsedFile;
+use crate::ast::{get_original_lineno_from_ast_locate, ParsedFile};
 use crate::types::{BlockId, SignalNode};
 
 struct BlockContext {
@@ -13,8 +13,32 @@ struct BlockContext {
     circuit_type: CircuitType,
     line_start: usize,
     line_end: usize,
+    ast_line_start: usize,
+    ast_line_end: usize,
     code_snippet: String,
     dataflow: Vec<DataflowEntry>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LineLocation {
+    source_line: usize,
+    ast_line: usize,
+}
+
+impl LineLocation {
+    fn unknown() -> Self {
+        Self {
+            source_line: 1,
+            ast_line: 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PortBlockData {
+    block_type: BlockType,
+    signal: SignalNode,
+    line_location: LineLocation,
 }
 
 #[derive(Debug, Default)]
@@ -187,7 +211,11 @@ fn collect_module_instances(
                         .get(&module_name)
                         .map(|template| template.port_order.as_slice())
                         .unwrap_or(&[]);
-                    let line_start = start_line(RefNode::ModuleInstantiation(module_instantiation));
+                    let line_start = start_line(
+                        &file.syntax_tree,
+                        &file.source_text,
+                        RefNode::ModuleInstantiation(module_instantiation),
+                    );
 
                     for hierarchical_instance in module_instantiation.nodes.2.contents() {
                         instances_by_module
@@ -400,7 +428,7 @@ fn qualify_block(block: &Block, scope: &str, next_block_id: &mut u64) -> Result<
         })
         .collect();
 
-    Block::new(
+    Block::new_with_ast_lines(
         take_block_id(next_block_id),
         block.block_type(),
         block.circuit_type(),
@@ -408,6 +436,8 @@ fn qualify_block(block: &Block, scope: &str, next_block_id: &mut u64) -> Result<
         block.source_file(),
         block.line_start(),
         block.line_end(),
+        block.ast_line_start(),
+        block.ast_line_end(),
         dataflow,
         block.code_snippet(),
     )
@@ -429,7 +459,11 @@ fn bridge_port_block(
         .get(&port_name)
         .cloned()
         .unwrap_or_default();
-    let child_port = qualify_signal(&SignalNode::named(port_name), child_scope);
+    let child_port = qualify_signal(
+        &port_signal_from_block(template_port_block)
+            .unwrap_or_else(|| SignalNode::named(port_name)),
+        child_scope,
+    );
     let parent_signals = connected
         .iter()
         .map(|signal| qualify_signal(signal, parent_scope))
@@ -455,7 +489,7 @@ fn bridge_port_block(
         _ => return Ok(None),
     };
 
-    Ok(Some(Block::new(
+    Ok(Some(Block::new_with_ast_lines(
         take_block_id(next_block_id),
         template_port_block.block_type(),
         CircuitType::Combinational,
@@ -463,17 +497,23 @@ fn bridge_port_block(
         template_port_block.source_file(),
         template_port_block.line_start(),
         template_port_block.line_end(),
+        template_port_block.ast_line_start(),
+        template_port_block.ast_line_end(),
         dataflow,
         template_port_block.code_snippet(),
     )?))
 }
 
 fn port_name_from_block(block: &Block) -> Option<String> {
+    port_signal_from_block(block).map(|signal| signal.name)
+}
+
+fn port_signal_from_block(block: &Block) -> Option<SignalNode> {
     let entry = block.dataflow().first()?;
 
     match block.block_type() {
-        BlockType::ModInput => entry.output.first().map(|signal| signal.name.clone()),
-        BlockType::ModOutput => entry.inputs.iter().next().map(|signal| signal.name.clone()),
+        BlockType::ModInput => entry.output.first().cloned(),
+        BlockType::ModOutput => entry.inputs.iter().next().cloned(),
         _ => None,
     }
 }
@@ -525,20 +565,48 @@ impl BlockCollector {
                         let dataflow =
                             extract_continuous_assign_dataflow(&file.syntax_tree, assign.into());
                         if !dataflow.is_empty() {
-                            let line_start = start_line(RefNode::ContinuousAssign(assign));
-                            let line_end = continuous_assign_end_line(assign).unwrap_or(line_start);
-                            let code_snippet =
-                                snippet_from_source(&file.source_text, line_start, line_end);
+                            let line_start = continuous_assign_start_line(
+                                &file.syntax_tree,
+                                &file.source_text,
+                                assign,
+                            )
+                            .unwrap_or_else(LineLocation::unknown);
+                            let source_line_offset =
+                                line_start.source_line as isize - line_start.ast_line as isize;
+                            let line_end = continuous_assign_end_line(
+                                &file.syntax_tree,
+                                &file.source_text,
+                                assign,
+                            )
+                            .map(|line_end| LineLocation {
+                                source_line: source_line_from_ast(
+                                    line_end.ast_line,
+                                    source_line_offset,
+                                ),
+                                ast_line: line_end.ast_line,
+                            })
+                            .unwrap_or(line_start);
+                            let code_snippet = snippet_from_source(
+                                &file.source_text,
+                                line_start.source_line,
+                                line_end.source_line,
+                            );
                             self.push_block(
                                 file,
                                 BlockContext {
                                     module_scope: module_scope.to_string(),
                                     block_type: BlockType::Assign,
                                     circuit_type: CircuitType::Combinational,
-                                    line_start,
-                                    line_end,
+                                    line_start: line_start.source_line,
+                                    line_end: line_end.source_line,
+                                    ast_line_start: line_start.ast_line,
+                                    ast_line_end: line_end.ast_line,
                                     code_snippet,
-                                    dataflow,
+                                    dataflow: remap_dataflow_source_lines(
+                                        &file.syntax_tree,
+                                        &file.source_text,
+                                        dataflow,
+                                    ),
                                 },
                             )?;
                         }
@@ -549,20 +617,48 @@ impl BlockCollector {
                         let (block_type, circuit_type) = classify_always(always_construct);
                         let dataflow = extract_always_dataflow(&file.syntax_tree, always_construct);
                         if !dataflow.is_empty() {
-                            let line_start = start_line(RefNode::AlwaysConstruct(always_construct));
-                            let line_end = always_end_line(always_construct).unwrap_or(line_start);
-                            let code_snippet =
-                                snippet_from_source(&file.source_text, line_start, line_end);
+                            let line_start = always_start_line(
+                                &file.syntax_tree,
+                                &file.source_text,
+                                always_construct,
+                            )
+                            .unwrap_or_else(LineLocation::unknown);
+                            let source_line_offset =
+                                line_start.source_line as isize - line_start.ast_line as isize;
+                            let line_end = always_end_line(
+                                &file.syntax_tree,
+                                &file.source_text,
+                                always_construct,
+                            )
+                            .map(|line_end| LineLocation {
+                                source_line: source_line_from_ast(
+                                    line_end.ast_line,
+                                    source_line_offset,
+                                ),
+                                ast_line: line_end.ast_line,
+                            })
+                            .unwrap_or(line_start);
+                            let code_snippet = snippet_from_source(
+                                &file.source_text,
+                                line_start.source_line,
+                                line_end.source_line,
+                            );
                             self.push_block(
                                 file,
                                 BlockContext {
                                     module_scope: module_scope.to_string(),
                                     block_type,
                                     circuit_type,
-                                    line_start,
-                                    line_end,
+                                    line_start: line_start.source_line,
+                                    line_end: line_end.source_line,
+                                    ast_line_start: line_start.ast_line,
+                                    ast_line_end: line_end.ast_line,
                                     code_snippet,
-                                    dataflow,
+                                    dataflow: remap_dataflow_source_lines(
+                                        &file.syntax_tree,
+                                        &file.source_text,
+                                        dataflow,
+                                    ),
                                 },
                             )?;
                         }
@@ -576,7 +672,7 @@ impl BlockCollector {
     }
 
     fn push_block(&mut self, file: &ParsedFile, ctx: BlockContext) -> Result<()> {
-        self.blocks.push(Block::new(
+        self.blocks.push(Block::new_with_ast_lines(
             BlockId(self.next_block_id),
             ctx.block_type,
             ctx.circuit_type,
@@ -584,9 +680,24 @@ impl BlockCollector {
             file.path.display().to_string(),
             ctx.line_start,
             ctx.line_end,
+            ctx.ast_line_start,
+            ctx.ast_line_end,
             ctx.dataflow,
             ctx.code_snippet,
-        )?);
+        )
+        .map_err(|error| {
+            anyhow!(
+                "failed to build {:?} block in {} for module {} with source lines {}-{} and AST lines {}-{}: {}",
+                ctx.block_type,
+                file.path.display(),
+                ctx.module_scope,
+                ctx.line_start,
+                ctx.line_end,
+                ctx.ast_line_start,
+                ctx.ast_line_end,
+                error
+            )
+        })?);
         self.next_block_id += 1;
 
         Ok(())
@@ -606,8 +717,10 @@ impl BlockCollector {
         };
 
         for (_, port) in port_list.contents() {
-            if let Some((block_type, signal_name)) = ansi_port_block_data(&file.syntax_tree, port) {
-                self.push_port_block(file, module_scope, block_type, signal_name)?;
+            if let Some(port_data) =
+                ansi_port_block_data(&file.source_text, &file.syntax_tree, port)
+            {
+                self.push_port_block(file, module_scope, port_data)?;
             }
         }
 
@@ -625,9 +738,11 @@ impl BlockCollector {
                 continue;
             };
 
-            if let Some(ports) = nonansi_port_block_data(&file.syntax_tree, &port_declaration.0) {
-                for (block_type, signal_name) in ports {
-                    self.push_port_block(file, module_scope, block_type, signal_name)?;
+            if let Some(ports) =
+                nonansi_port_block_data(&file.source_text, &file.syntax_tree, &port_declaration.0)
+            {
+                for port in ports {
+                    self.push_port_block(file, module_scope, port)?;
                 }
             }
         }
@@ -639,29 +754,48 @@ impl BlockCollector {
         &mut self,
         file: &ParsedFile,
         module_scope: &str,
-        block_type: BlockType,
-        signal_name: String,
+        port: PortBlockData,
     ) -> Result<()> {
-        let line_start = port_block_details(&file.syntax_tree, &signal_name).unwrap_or(1);
-        let code_snippet = snippet_from_source(&file.source_text, line_start, line_start);
+        let line_start = port.line_location.source_line;
         let line_end = line_start;
-        let dataflow = match block_type {
-            BlockType::ModInput => vec![to_entry(vec![signal_name], HashSet::new())],
-            BlockType::ModOutput => vec![to_entry(Vec::new(), HashSet::from([signal_name]))],
+        let code_snippet = snippet_from_source(&file.source_text, line_start, line_end);
+        let dataflow = match port.block_type {
+            BlockType::ModInput => vec![DataflowEntry {
+                output: vec![port.signal.clone()],
+                inputs: HashSet::new(),
+            }],
+            BlockType::ModOutput => vec![DataflowEntry {
+                output: Vec::new(),
+                inputs: HashSet::from([port.signal.clone()]),
+            }],
             _ => return Ok(()),
         };
 
-        self.blocks.push(Block::new(
+        self.blocks.push(Block::new_with_ast_lines(
             BlockId(self.next_block_id),
-            block_type,
+            port.block_type,
             CircuitType::Combinational,
             module_scope,
             file.path.display().to_string(),
             line_start,
             line_end,
+            port.line_location.ast_line,
+            port.line_location.ast_line,
             dataflow,
             code_snippet,
-        )?);
+        )
+        .map_err(|error| {
+            anyhow!(
+                "failed to build {:?} port block in {} for module {} and signal {} with source line {} and AST line {}: {}",
+                port.block_type,
+                file.path.display(),
+                module_scope,
+                port.signal.name,
+                line_start,
+                port.line_location.ast_line,
+                error
+            )
+        })?);
         self.next_block_id += 1;
 
         Ok(())
@@ -669,9 +803,10 @@ impl BlockCollector {
 }
 
 fn ansi_port_block_data(
+    source_text: &str,
     syntax_tree: &sv_parser::SyntaxTree,
     port: &sv_parser::AnsiPortDeclaration,
-) -> Option<(BlockType, String)> {
+) -> Option<PortBlockData> {
     match port {
         sv_parser::AnsiPortDeclaration::Net(port) => {
             let direction = match port.nodes.0.as_ref()? {
@@ -683,19 +818,56 @@ fn ansi_port_block_data(
                 }
             };
 
-            Some((
-                block_type_for_direction(direction)?,
-                identifier_text(syntax_tree, (&port.nodes.1).into()),
-            ))
+            let mut signal = identifier_signal_node_with_source(
+                source_text,
+                syntax_tree,
+                (&port.nodes.1.nodes.0).into(),
+            );
+            let line_location =
+                line_location_from_node(syntax_tree, source_text, port.as_ref().into())
+                    .unwrap_or_else(LineLocation::unknown);
+            signal.locate.line = line_location.source_line;
+
+            Some(PortBlockData {
+                block_type: block_type_for_direction(direction)?,
+                signal,
+                line_location,
+            })
         }
-        sv_parser::AnsiPortDeclaration::Variable(port) => Some((
-            block_type_for_direction(port.nodes.0.as_ref()?.nodes.0.as_ref()?)?,
-            identifier_text(syntax_tree, (&port.nodes.1).into()),
-        )),
-        sv_parser::AnsiPortDeclaration::Paren(port) => Some((
-            block_type_for_direction(port.nodes.0.as_ref()?)?,
-            identifier_text(syntax_tree, (&port.nodes.2).into()),
-        )),
+        sv_parser::AnsiPortDeclaration::Variable(port) => {
+            let mut signal = identifier_signal_node_with_source(
+                source_text,
+                syntax_tree,
+                (&port.nodes.1.nodes.0).into(),
+            );
+            let line_location =
+                line_location_from_node(syntax_tree, source_text, port.as_ref().into())
+                    .unwrap_or_else(LineLocation::unknown);
+            signal.locate.line = line_location.source_line;
+
+            Some(PortBlockData {
+                block_type: block_type_for_direction(port.nodes.0.as_ref()?.nodes.0.as_ref()?)?,
+                signal,
+                line_location,
+            })
+        }
+        sv_parser::AnsiPortDeclaration::Paren(port) => {
+            let mut signal = identifier_signal_node_with_source(
+                source_text,
+                syntax_tree,
+                (&port.nodes.2.nodes.0).into(),
+            );
+            let line_location =
+                line_location_from_node(syntax_tree, source_text, port.as_ref().into())
+                    .unwrap_or_else(LineLocation::unknown);
+            signal.locate.line = line_location.source_line;
+
+            Some(PortBlockData {
+                block_type: block_type_for_direction(port.nodes.0.as_ref()?)?,
+                signal,
+                line_location,
+            })
+        }
     }
 }
 
@@ -708,24 +880,26 @@ fn block_type_for_direction(direction: &sv_parser::PortDirection) -> Option<Bloc
 }
 
 fn nonansi_port_block_data(
+    source_text: &str,
     syntax_tree: &sv_parser::SyntaxTree,
     port_declaration: &sv_parser::PortDeclaration,
-) -> Option<Vec<(BlockType, String)>> {
+) -> Option<Vec<PortBlockData>> {
     match port_declaration {
         sv_parser::PortDeclaration::Input(port) => {
-            nonansi_input_port_block_data(syntax_tree, &port.nodes.1)
+            nonansi_input_port_block_data(source_text, syntax_tree, &port.nodes.1)
         }
         sv_parser::PortDeclaration::Output(port) => {
-            nonansi_output_port_block_data(syntax_tree, &port.nodes.1)
+            nonansi_output_port_block_data(source_text, syntax_tree, &port.nodes.1)
         }
         _ => None,
     }
 }
 
 fn nonansi_input_port_block_data(
+    source_text: &str,
     syntax_tree: &sv_parser::SyntaxTree,
     declaration: &sv_parser::InputDeclaration,
-) -> Option<Vec<(BlockType, String)>> {
+) -> Option<Vec<PortBlockData>> {
     match declaration {
         sv_parser::InputDeclaration::Net(declaration) => Some(
             declaration
@@ -736,10 +910,23 @@ fn nonansi_input_port_block_data(
                 .contents()
                 .into_iter()
                 .map(|(identifier, _)| {
-                    (
-                        BlockType::ModInput,
-                        identifier_text(syntax_tree, identifier.into()),
+                    let mut signal = identifier_signal_node_with_source(
+                        source_text,
+                        syntax_tree,
+                        (&identifier.nodes.0).into(),
+                    );
+                    let line_location = line_location_from_node(
+                        syntax_tree,
+                        source_text,
+                        declaration.as_ref().into(),
                     )
+                    .unwrap_or_else(LineLocation::unknown);
+                    signal.locate.line = line_location.source_line;
+                    PortBlockData {
+                        block_type: BlockType::ModInput,
+                        line_location,
+                        signal,
+                    }
                 })
                 .collect(),
         ),
@@ -752,10 +939,23 @@ fn nonansi_input_port_block_data(
                 .contents()
                 .into_iter()
                 .map(|(identifier, _)| {
-                    (
-                        BlockType::ModInput,
-                        identifier_text(syntax_tree, identifier.into()),
+                    let mut signal = identifier_signal_node_with_source(
+                        source_text,
+                        syntax_tree,
+                        (&identifier.nodes.0).into(),
+                    );
+                    let line_location = line_location_from_node(
+                        syntax_tree,
+                        source_text,
+                        declaration.as_ref().into(),
                     )
+                    .unwrap_or_else(LineLocation::unknown);
+                    signal.locate.line = line_location.source_line;
+                    PortBlockData {
+                        block_type: BlockType::ModInput,
+                        line_location,
+                        signal,
+                    }
                 })
                 .collect(),
         ),
@@ -763,9 +963,10 @@ fn nonansi_input_port_block_data(
 }
 
 fn nonansi_output_port_block_data(
+    source_text: &str,
     syntax_tree: &sv_parser::SyntaxTree,
     declaration: &sv_parser::OutputDeclaration,
-) -> Option<Vec<(BlockType, String)>> {
+) -> Option<Vec<PortBlockData>> {
     match declaration {
         sv_parser::OutputDeclaration::Net(declaration) => Some(
             declaration
@@ -776,10 +977,23 @@ fn nonansi_output_port_block_data(
                 .contents()
                 .into_iter()
                 .map(|(identifier, _)| {
-                    (
-                        BlockType::ModOutput,
-                        identifier_text(syntax_tree, identifier.into()),
+                    let mut signal = identifier_signal_node_with_source(
+                        source_text,
+                        syntax_tree,
+                        (&identifier.nodes.0).into(),
+                    );
+                    let line_location = line_location_from_node(
+                        syntax_tree,
+                        source_text,
+                        declaration.as_ref().into(),
                     )
+                    .unwrap_or_else(LineLocation::unknown);
+                    signal.locate.line = line_location.source_line;
+                    PortBlockData {
+                        block_type: BlockType::ModOutput,
+                        line_location,
+                        signal,
+                    }
                 })
                 .collect(),
         ),
@@ -792,10 +1006,23 @@ fn nonansi_output_port_block_data(
                 .contents()
                 .into_iter()
                 .map(|(identifier, _, _)| {
-                    (
-                        BlockType::ModOutput,
-                        identifier_text(syntax_tree, identifier.into()),
+                    let mut signal = identifier_signal_node_with_source(
+                        source_text,
+                        syntax_tree,
+                        (&identifier.nodes.0).into(),
+                    );
+                    let line_location = line_location_from_node(
+                        syntax_tree,
+                        source_text,
+                        declaration.as_ref().into(),
                     )
+                    .unwrap_or_else(LineLocation::unknown);
+                    signal.locate.line = line_location.source_line;
+                    PortBlockData {
+                        block_type: BlockType::ModOutput,
+                        line_location,
+                        signal,
+                    }
                 })
                 .collect(),
         ),
@@ -871,6 +1098,16 @@ fn merge_assign_group(mut blocks: Vec<Block>) -> Result<Block> {
         .map(Block::line_end)
         .max()
         .unwrap_or(line_start);
+    let ast_line_start = blocks
+        .iter()
+        .map(Block::ast_line_start)
+        .min()
+        .unwrap_or(line_start);
+    let ast_line_end = blocks
+        .iter()
+        .map(Block::ast_line_end)
+        .max()
+        .unwrap_or(ast_line_start);
     let raw_entries = blocks
         .iter()
         .flat_map(|block| block.dataflow().iter().cloned())
@@ -894,7 +1131,7 @@ fn merge_assign_group(mut blocks: Vec<Block>) -> Result<Block> {
         .collect::<Vec<_>>()
         .join("\n");
 
-    Block::new(
+    Block::new_with_ast_lines(
         first.id(),
         BlockType::Assign,
         first.circuit_type(),
@@ -902,6 +1139,8 @@ fn merge_assign_group(mut blocks: Vec<Block>) -> Result<Block> {
         first.source_file(),
         line_start,
         line_end,
+        ast_line_start,
+        ast_line_end,
         dataflow,
         code_snippet,
     )
@@ -1088,9 +1327,24 @@ fn locate_from_node(node: RefNode) -> crate::types::SignalLocate {
         .map(|loc| crate::types::SignalLocate {
             offset: loc.offset,
             line: usize::try_from(loc.line).unwrap_or(0),
+            ast_line: usize::try_from(loc.line).unwrap_or(0),
             len: loc.len,
         })
         .unwrap_or_else(|| crate::types::SignalLocate::unknown(0))
+}
+
+fn locate_from_node_with_source(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    node: RefNode,
+) -> crate::types::SignalLocate {
+    let mut locate = locate_from_node(node);
+    if !locate.is_unknown() {
+        if let Some(row) = signal_source_line(syntax_tree, source_text, locate) {
+            locate.line = row;
+        }
+    }
+    locate
 }
 
 fn identifier_signal_node(
@@ -1099,6 +1353,18 @@ fn identifier_signal_node(
 ) -> crate::types::SignalNode {
     let name = identifier_text(syntax_tree, node.clone());
     crate::types::SignalNode::variable(name, locate_from_node(node))
+}
+
+fn identifier_signal_node_with_source(
+    source_text: &str,
+    syntax_tree: &sv_parser::SyntaxTree,
+    node: RefNode,
+) -> crate::types::SignalNode {
+    let name = identifier_text(syntax_tree, node.clone());
+    crate::types::SignalNode::variable(
+        name,
+        locate_from_node_with_source(syntax_tree, source_text, node),
+    )
 }
 
 fn hierarchical_variable_identifier_signal_node(
@@ -1145,101 +1411,319 @@ fn snippet_from_source(source_text: &str, line_start: usize, line_end: usize) ->
         .to_string()
 }
 
-fn start_line(node: RefNode) -> usize {
-    unwrap_locate!(node)
-        .and_then(|loc| usize::try_from(loc.line).ok())
+fn remap_dataflow_source_lines(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    dataflow: Vec<DataflowEntry>,
+) -> Vec<DataflowEntry> {
+    dataflow
+        .into_iter()
+        .map(|entry| DataflowEntry {
+            output: entry
+                .output
+                .into_iter()
+                .map(|signal| remap_signal_node_source_line(syntax_tree, source_text, signal))
+                .collect(),
+            inputs: entry
+                .inputs
+                .into_iter()
+                .map(|signal| remap_signal_node_source_line(syntax_tree, source_text, signal))
+                .collect(),
+        })
+        .collect()
+}
+
+fn remap_signal_node_source_line(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    mut signal: crate::types::SignalNode,
+) -> crate::types::SignalNode {
+    signal.locate = remap_signal_locate_source_line(syntax_tree, source_text, signal.locate);
+    signal
+}
+
+fn remap_signal_locate_source_line(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    mut locate: crate::types::SignalLocate,
+) -> crate::types::SignalLocate {
+    if locate.is_unknown() {
+        return locate;
+    }
+
+    if let Some(row) = signal_source_line(syntax_tree, source_text, locate) {
+        locate.line = row;
+    }
+
+    locate
+}
+
+fn signal_source_line(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    locate: crate::types::SignalLocate,
+) -> Option<usize> {
+    let ast_locate = sv_parser::Locate {
+        offset: locate.offset,
+        line: u32::try_from(locate.ast_line).ok()?,
+        len: locate.len,
+    };
+
+    get_original_lineno_from_ast_locate(syntax_tree, ast_locate, source_text)
+}
+
+fn source_line_from_ast(ast_line: usize, source_line_offset: isize) -> usize {
+    (ast_line as isize + source_line_offset).max(1) as usize
+}
+
+fn start_line(syntax_tree: &sv_parser::SyntaxTree, source_text: &str, node: RefNode) -> usize {
+    line_location_from_node(syntax_tree, source_text, node)
+        .map(|location| location.source_line)
         .unwrap_or(1)
 }
 
-fn locate_line(loc: &sv_parser::Locate) -> Option<usize> {
-    usize::try_from(loc.line).ok()
+fn continuous_assign_start_line(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    assign: &sv_parser::ContinuousAssign,
+) -> Option<LineLocation> {
+    match assign {
+        sv_parser::ContinuousAssign::Net(assign) => {
+            keyword_start_line(syntax_tree, source_text, &assign.nodes.0, "assign")
+        }
+        sv_parser::ContinuousAssign::Variable(assign) => {
+            keyword_start_line(syntax_tree, source_text, &assign.nodes.0, "assign")
+        }
+    }
 }
 
-fn keyword_line(keyword: &sv_parser::Keyword) -> Option<usize> {
-    locate_line(&keyword.nodes.0)
+fn always_start_line(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    always_construct: &sv_parser::AlwaysConstruct,
+) -> Option<LineLocation> {
+    always_keyword_line(syntax_tree, source_text, &always_construct.nodes.0)
 }
 
-fn symbol_line(symbol: &sv_parser::Symbol) -> Option<usize> {
-    locate_line(&symbol.nodes.0)
+fn line_location_from_node(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    node: RefNode,
+) -> Option<LineLocation> {
+    unwrap_locate!(node).and_then(|loc| line_location_from_locate(syntax_tree, source_text, &loc))
 }
 
-fn statement_end_line(statement: &sv_parser::Statement) -> Option<usize> {
+fn line_location_from_locate(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    loc: &sv_parser::Locate,
+) -> Option<LineLocation> {
+    Some(LineLocation {
+        source_line: get_original_lineno_from_ast_locate(syntax_tree, loc.clone(), source_text)?,
+        ast_line: usize::try_from(loc.line).ok()?,
+    })
+}
+
+fn keyword_line(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    keyword: &sv_parser::Keyword,
+) -> Option<LineLocation> {
+    line_location_from_locate(syntax_tree, source_text, &keyword.nodes.0)
+}
+
+fn keyword_start_line(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    keyword: &sv_parser::Keyword,
+    token: &str,
+) -> Option<LineLocation> {
+    let ast_line = usize::try_from(keyword.nodes.0.line).ok()?;
+    let aligned_ast_line = align_line_to_token(source_text, ast_line, token);
+    if line_contains_token(source_text, aligned_ast_line, token) {
+        return Some(LineLocation {
+            source_line: aligned_ast_line,
+            ast_line,
+        });
+    }
+
+    let offset_line = keyword_line(syntax_tree, source_text, keyword)?;
+    let source_line = align_line_to_token(source_text, offset_line.source_line, token);
+    if line_contains_token(source_text, source_line, token) && source_line.abs_diff(ast_line) <= 32
+    {
+        return Some(LineLocation {
+            source_line,
+            ast_line,
+        });
+    }
+
+    Some(LineLocation {
+        source_line: ast_line,
+        ast_line,
+    })
+}
+
+fn always_keyword_line(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    keyword: &sv_parser::AlwaysKeyword,
+) -> Option<LineLocation> {
+    match keyword {
+        sv_parser::AlwaysKeyword::Always(keyword) => {
+            keyword_start_line(syntax_tree, source_text, keyword, "always")
+                .map(|location| align_line_location_to_token(source_text, location, "always"))
+        }
+        sv_parser::AlwaysKeyword::AlwaysComb(keyword) => {
+            keyword_start_line(syntax_tree, source_text, keyword, "always_comb")
+                .map(|location| align_line_location_to_token(source_text, location, "always_comb"))
+        }
+        sv_parser::AlwaysKeyword::AlwaysLatch(keyword) => {
+            keyword_start_line(syntax_tree, source_text, keyword, "always_latch")
+                .map(|location| align_line_location_to_token(source_text, location, "always_latch"))
+        }
+        sv_parser::AlwaysKeyword::AlwaysFf(keyword) => {
+            keyword_start_line(syntax_tree, source_text, keyword, "always_ff")
+                .map(|location| align_line_location_to_token(source_text, location, "always_ff"))
+        }
+    }
+}
+
+fn align_line_location_to_token(
+    source_text: &str,
+    mut location: LineLocation,
+    token: &str,
+) -> LineLocation {
+    location.source_line = align_line_to_token(source_text, location.source_line, token);
+    location
+}
+
+fn align_line_to_token(source_text: &str, candidate_line: usize, token: &str) -> usize {
+    if line_contains_token(source_text, candidate_line, token) {
+        return candidate_line;
+    }
+
+    for distance in 1..=2 {
+        let next_line = candidate_line + distance;
+        if line_contains_token(source_text, next_line, token) {
+            return next_line;
+        }
+
+        let prev_line = candidate_line.saturating_sub(distance);
+        if prev_line != 0 && line_contains_token(source_text, prev_line, token) {
+            return prev_line;
+        }
+    }
+
+    candidate_line
+}
+
+fn line_contains_token(source_text: &str, line_no: usize, token: &str) -> bool {
+    source_text
+        .lines()
+        .nth(line_no.saturating_sub(1))
+        .map(|line| line.contains(token))
+        .unwrap_or(false)
+}
+
+fn symbol_line(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    symbol: &sv_parser::Symbol,
+) -> Option<LineLocation> {
+    line_location_from_locate(syntax_tree, source_text, &symbol.nodes.0)
+}
+
+fn statement_end_line(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    statement: &sv_parser::Statement,
+) -> Option<LineLocation> {
     match &statement.nodes.2 {
-        sv_parser::StatementItem::SeqBlock(block) => keyword_line(&block.nodes.4),
+        sv_parser::StatementItem::SeqBlock(block) => {
+            keyword_line(syntax_tree, source_text, &block.nodes.4)
+        }
         sv_parser::StatementItem::ProceduralTimingControlStatement(statement) => {
-            statement_or_null_end_line(&statement.nodes.1)
+            statement_or_null_end_line(syntax_tree, source_text, &statement.nodes.1)
         }
-        sv_parser::StatementItem::BlockingAssignment(assignment) => symbol_line(&assignment.1),
-        sv_parser::StatementItem::NonblockingAssignment(assignment) => symbol_line(&assignment.1),
+        sv_parser::StatementItem::BlockingAssignment(assignment) => {
+            symbol_line(syntax_tree, source_text, &assignment.1)
+        }
+        sv_parser::StatementItem::NonblockingAssignment(assignment) => {
+            symbol_line(syntax_tree, source_text, &assignment.1)
+        }
         sv_parser::StatementItem::ConditionalStatement(statement) => {
-            conditional_end_line(statement)
+            conditional_end_line(syntax_tree, source_text, statement)
         }
-        sv_parser::StatementItem::CaseStatement(statement) => case_statement_end_line(statement),
-        _ => unwrap_locate!(statement).and_then(locate_line),
+        sv_parser::StatementItem::CaseStatement(statement) => {
+            case_statement_end_line(syntax_tree, source_text, statement)
+        }
+        _ => line_location_from_node(syntax_tree, source_text, statement.into()),
     }
 }
 
-fn statement_or_null_end_line(statement: &sv_parser::StatementOrNull) -> Option<usize> {
+fn statement_or_null_end_line(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    statement: &sv_parser::StatementOrNull,
+) -> Option<LineLocation> {
     match statement {
-        sv_parser::StatementOrNull::Statement(statement) => statement_end_line(statement),
-        sv_parser::StatementOrNull::Attribute(attribute) => symbol_line(&attribute.nodes.1),
+        sv_parser::StatementOrNull::Statement(statement) => {
+            statement_end_line(syntax_tree, source_text, statement)
+        }
+        sv_parser::StatementOrNull::Attribute(attribute) => {
+            symbol_line(syntax_tree, source_text, &attribute.nodes.1)
+        }
     }
 }
 
-fn conditional_end_line(statement: &sv_parser::ConditionalStatement) -> Option<usize> {
+fn conditional_end_line(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    statement: &sv_parser::ConditionalStatement,
+) -> Option<LineLocation> {
     if let Some((_, tail)) = &statement.nodes.5 {
-        return statement_or_null_end_line(tail);
+        return statement_or_null_end_line(syntax_tree, source_text, tail);
     }
     if let Some((_, _, _, tail)) = statement.nodes.4.last() {
-        return statement_or_null_end_line(tail);
+        return statement_or_null_end_line(syntax_tree, source_text, tail);
     }
-    statement_or_null_end_line(&statement.nodes.3)
+    statement_or_null_end_line(syntax_tree, source_text, &statement.nodes.3)
 }
 
-fn case_statement_end_line(statement: &sv_parser::CaseStatement) -> Option<usize> {
+fn case_statement_end_line(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    statement: &sv_parser::CaseStatement,
+) -> Option<LineLocation> {
     match statement {
-        sv_parser::CaseStatement::Normal(statement) => keyword_line(&statement.nodes.5),
-        _ => unwrap_locate!(statement).and_then(locate_line),
+        sv_parser::CaseStatement::Normal(statement) => {
+            keyword_line(syntax_tree, source_text, &statement.nodes.5)
+        }
+        _ => line_location_from_node(syntax_tree, source_text, statement.into()),
     }
 }
 
-fn continuous_assign_end_line(assign: &sv_parser::ContinuousAssign) -> Option<usize> {
+fn continuous_assign_end_line(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    assign: &sv_parser::ContinuousAssign,
+) -> Option<LineLocation> {
     match assign {
-        sv_parser::ContinuousAssign::Net(assign) => symbol_line(&assign.nodes.4),
-        sv_parser::ContinuousAssign::Variable(assign) => symbol_line(&assign.nodes.3),
-    }
-}
-
-fn always_end_line(always_construct: &sv_parser::AlwaysConstruct) -> Option<usize> {
-    statement_end_line(&always_construct.nodes.1)
-}
-
-fn port_block_details(syntax_tree: &sv_parser::SyntaxTree, signal_name: &str) -> Option<usize> {
-    for node in syntax_tree {
-        match node {
-            RefNode::AnsiPortDeclaration(port)
-                if ansi_port_block_data(syntax_tree, port)
-                    .is_some_and(|(_, name)| name == signal_name) =>
-            {
-                return Some(start_line(RefNode::AnsiPortDeclaration(port)));
-            }
-            RefNode::InputDeclaration(port)
-                if nonansi_input_port_block_data(syntax_tree, port)
-                    .is_some_and(|ports| ports.iter().any(|(_, name)| name == signal_name)) =>
-            {
-                return Some(start_line(RefNode::InputDeclaration(port)));
-            }
-            RefNode::OutputDeclaration(port)
-                if nonansi_output_port_block_data(syntax_tree, port)
-                    .is_some_and(|ports| ports.iter().any(|(_, name)| name == signal_name)) =>
-            {
-                return Some(start_line(RefNode::OutputDeclaration(port)));
-            }
-            _ => {}
+        sv_parser::ContinuousAssign::Net(assign) => {
+            symbol_line(syntax_tree, source_text, &assign.nodes.4)
+        }
+        sv_parser::ContinuousAssign::Variable(assign) => {
+            symbol_line(syntax_tree, source_text, &assign.nodes.3)
         }
     }
+}
 
-    None
+fn always_end_line(
+    syntax_tree: &sv_parser::SyntaxTree,
+    source_text: &str,
+    always_construct: &sv_parser::AlwaysConstruct,
+) -> Option<LineLocation> {
+    statement_end_line(syntax_tree, source_text, &always_construct.nodes.1)
 }
 
 fn extract_continuous_assign_dataflow(
@@ -1643,19 +2127,6 @@ fn net_lvalue_nodes(
             .flat_map(|child| net_lvalue_nodes(syntax_tree, child))
             .collect(),
         _ => Vec::new(),
-    }
-}
-
-fn to_entry(outputs: Vec<String>, inputs: HashSet<String>) -> DataflowEntry {
-    DataflowEntry {
-        output: outputs
-            .into_iter()
-            .map(crate::types::SignalNode::named)
-            .collect(),
-        inputs: inputs
-            .into_iter()
-            .map(crate::types::SignalNode::named)
-            .collect(),
     }
 }
 

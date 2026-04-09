@@ -35,6 +35,8 @@ fn instruction_execution_path_serializes_as_stable_json_graph() {
             source_file: "design.sv".into(),
             line_start: 10,
             line_end: 20,
+            ast_line_start: 10,
+            ast_line_end: 20,
             code_snippet: "always_ff @(posedge clk) result <= tmp;".into(),
         }],
     };
@@ -68,6 +70,7 @@ fn instruction_execution_path_serializes_as_stable_json_graph() {
                         "locate": {
                             "offset": 0,
                             "line": 0,
+                            "ast_line": 0,
                             "len": 6
                         }
                     }
@@ -81,6 +84,8 @@ fn instruction_execution_path_serializes_as_stable_json_graph() {
                     "source_file": "design.sv",
                     "line_start": 10,
                     "line_end": 20,
+                    "ast_line_start": 10,
+                    "ast_line_end": 20,
                     "code_snippet": "always_ff @(posedge clk) result <= tmp;"
                 }
             ]
@@ -103,6 +108,8 @@ fn static_slice_graph_serializes_without_time_annotations() {
             source_file: "design.sv".into(),
             line_start: 5,
             line_end: 5,
+            ast_line_start: 5,
+            ast_line_end: 5,
             code_snippet: "assign result = a & b;".into(),
         }],
     };
@@ -128,6 +135,8 @@ fn static_slice_graph_serializes_without_time_annotations() {
                     "source_file": "design.sv",
                     "line_start": 5,
                     "line_end": 5,
+                    "ast_line_start": 5,
+                    "ast_line_end": 5,
                     "code_snippet": "assign result = a & b;"
                 }
             ]

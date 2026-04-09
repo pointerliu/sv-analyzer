@@ -504,6 +504,79 @@ fn blockize_assigns_stable_ids_for_identical_inputs() {
     );
 }
 
+#[test]
+fn maps_preprocessed_blocks_back_to_source_lines_and_snippets() {
+    let fixture_dir = unique_fixture_dir("preprocessed_lines");
+    fs::create_dir_all(&fixture_dir).unwrap();
+
+    let design = fixture_dir.join("shifted_demo.sv");
+    fs::write(
+        fixture_dir.join("defs_a.svh"),
+        "// include a\n// include b\n",
+    )
+    .unwrap();
+    fs::write(
+        fixture_dir.join("defs_b.svh"),
+        "// include c\n// include d\n",
+    )
+    .unwrap();
+    fs::write(
+        &design,
+        "`include \"defs_a.svh\"\n`include \"defs_b.svh\"\n\nmodule shifted_demo(\n  input logic clk_i,\n  output logic y\n);\n  assign y = clk_i;\nendmodule\n",
+    )
+    .unwrap();
+
+    let parsed = SvParserProvider
+        .parse_files(std::slice::from_ref(&design))
+        .unwrap();
+    let block_set = DataflowBlockizer.blockize(&parsed).unwrap();
+
+    let clk_input = block_set
+        .blocks()
+        .iter()
+        .find(|block| {
+            matches!(block.block_type(), BlockType::ModInput)
+                && sorted_signals(block.output_signals()) == vec!["clk_i".to_string()]
+        })
+        .unwrap();
+    assert_eq!(clk_input.line_start(), 5);
+    assert_eq!(clk_input.line_end(), 5);
+    assert_eq!(clk_input.ast_line_start(), 9);
+    assert_eq!(clk_input.ast_line_end(), 9);
+    assert_eq!(clk_input.code_snippet(), "input logic clk_i,");
+    assert_eq!(clk_input.dataflow()[0].output[0].locate.line, 5);
+    assert_eq!(clk_input.dataflow()[0].output[0].locate.ast_line, 9);
+
+    let assign_block = block_set
+        .blocks()
+        .iter()
+        .find(|block| matches!(block.block_type(), BlockType::Assign))
+        .unwrap();
+    assert_eq!(assign_block.line_start(), 8);
+    assert_eq!(assign_block.line_end(), 8);
+    assert_eq!(assign_block.ast_line_start(), 12);
+    assert_eq!(assign_block.ast_line_end(), 12);
+    assert_eq!(assign_block.code_snippet(), "assign y = clk_i;");
+    assert!(
+        assign_block
+            .dataflow()
+            .iter()
+            .any(|entry| entry.output[0].locate.line == 8),
+        "expected assign output source line in dataflow: {:?}",
+        assign_block.dataflow()
+    );
+    assert!(
+        assign_block
+            .dataflow()
+            .iter()
+            .any(|entry| entry.output[0].locate.ast_line == 12),
+        "expected assign output AST line in dataflow: {:?}",
+        assign_block.dataflow()
+    );
+
+    fs::remove_dir_all(fixture_dir).unwrap();
+}
+
 fn sorted_outputs(signals: &[sva_core::types::SignalNode]) -> Vec<String> {
     let mut values = signals
         .iter()
@@ -535,4 +608,17 @@ fn write_fixture(contents: &str) -> PathBuf {
 
     fs::write(&path, contents).unwrap();
     path
+}
+
+fn unique_fixture_dir(label: &str) -> PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "sva_task7_blockize_demo_design_{}_{}_{}",
+        label,
+        std::process::id(),
+        unique
+    ))
 }

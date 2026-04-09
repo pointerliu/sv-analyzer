@@ -35,6 +35,8 @@ pub struct SliceBlock {
     pub source_file: String,
     pub line_start: usize,
     pub line_end: usize,
+    pub ast_line_start: usize,
+    pub ast_line_end: usize,
     pub code_snippet: String,
 }
 
@@ -109,6 +111,8 @@ where
                     source_file: block.source_file.clone(),
                     line_start: block.line_start,
                     line_end: block.line_end,
+                    ast_line_start: block.ast_line_start,
+                    ast_line_end: block.ast_line_end,
                     code_snippet: block.code_snippet.clone(),
                 })
                 .collect(),
