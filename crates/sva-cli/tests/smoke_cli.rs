@@ -13,6 +13,7 @@ fn cli_shows_help() {
     assert!(output.status.success());
     assert!(stdout.contains("dataflow-engine"));
     assert!(stdout.contains("blockize"));
+    assert!(stdout.contains("blocks"));
     assert!(stdout.contains("slice"));
     assert!(stdout.contains("coverage"));
     assert!(stdout.contains("wave"));

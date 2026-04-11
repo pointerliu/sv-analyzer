@@ -25,6 +25,8 @@ cargo run -p sva_cli -- --help
 cargo run -p sva_cli -- blockize --sv <file> [--sv <file> ...]
 cargo run -p sva_cli -- blockize --project-path <dir> [--include-paths <dir1,dir2,...>]
 
+cargo run -p sva_cli -- blocks query --input <blockize-json> [--block-id <id>] [--output-signal <name> ...] [--input-signal <name> ...] [--scope <prefix>] [--block-type <kind>] [--circuit-type <kind>] [--source-file <suffix>]
+
 cargo run -p sva_cli -- slice --static --sv <file> --signal <hierarchical-name>
 cargo run -p sva_cli -- slice --static --project-path <dir> --signal <hierarchical-name> [--include-paths <dir1,dir2,...>]
 
@@ -46,6 +48,30 @@ cargo run -p sva_cli -- wave --vcd <file> --signal <hierarchical-name> --time <t
 - Static and dynamic slice queries work best with hierarchical signal names in elaborated designs.
 - If a signal name is ambiguous or missing, the CLI returns similar hierarchical names.
 - The parser currently hardcodes the `RVFI` define for preprocessing.
+
+### Block Queries
+
+- `blocks query` reads a saved `blockize` JSON file and returns full matching block JSON.
+- All query properties are combined with logical AND.
+- Repeated `--output-signal` and `--input-signal` flags require the block to contain every requested signal.
+- `--scope` matches the exact `module_scope` or any hierarchical descendant.
+- `--source-file` uses suffix matching, so `rtl/ibex_if_stage.sv` matches an absolute path ending in that suffix.
+
+Example:
+
+```bash
+cargo run -p sva_cli -- blockize \
+  --project-path /home/lzz/exp_wkdir/ibex_test/ibex/rtl \
+  --sv /home/lzz/exp_wkdir/ibex_test/ibex/examples/simple_system/rtl/ibex_simple_system.sv \
+  --include-paths /home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/ip/prim/rtl,/home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/dv/sv/dv_utils \
+  > ibex_blocks.json
+
+cargo run -p sva_cli -- blocks query \
+  --input ibex_blocks.json \
+  --scope TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i \
+  --output-signal TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o \
+  --source-file rtl/ibex_if_stage.sv
+```
 
 ### Real Project Example
 
