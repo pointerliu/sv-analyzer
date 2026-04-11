@@ -84,9 +84,18 @@ impl BlockSet {
     }
 
     pub fn validate_signal_has_driver(&self, signal: &SignalNode) -> Result<()> {
+        self.resolve_signal_with_driver(signal).map(|_| ())
+    }
+
+    pub fn resolve_signal_with_driver(&self, signal: &SignalNode) -> Result<SignalNode> {
         if !self.drivers_for(signal).is_empty() {
-            return Ok(());
+            return Ok(signal.clone());
         }
+
+        if let Some(resolved) = self.resolve_hierarchical_alias(signal) {
+            return Ok(resolved);
+        }
+
         let candidates: Vec<String> = self.signal_names().map(|s| s.name.clone()).collect();
         let suggestions = FuzzyMatch::find_top_n(signal.as_str(), &candidates);
         Err(SignalNotFound {
@@ -95,6 +104,67 @@ impl BlockSet {
         }
         .into())
     }
+
+    fn resolve_hierarchical_alias(&self, signal: &SignalNode) -> Option<SignalNode> {
+        if signal.is_literal() || !signal.name.contains('.') {
+            return None;
+        }
+
+        let query_segments = signal.name.split('.').collect::<Vec<_>>();
+        let query_first = query_segments.first()?;
+        let query_last = query_segments.last()?;
+
+        let mut matches = self
+            .signal_to_drivers
+            .keys()
+            .filter(|candidate| {
+                candidate.kind == signal.kind
+                    && candidate.name != signal.name
+                    && candidate.name.contains('.')
+            })
+            .filter(|candidate| {
+                let candidate_segments = candidate.name.split('.').collect::<Vec<_>>();
+                if candidate_segments.len() <= query_segments.len() {
+                    return false;
+                }
+
+                let Some(candidate_first) = candidate_segments.first() else {
+                    return false;
+                };
+                let Some(candidate_last) = candidate_segments.last() else {
+                    return false;
+                };
+
+                if candidate_first != query_first || candidate_last != query_last {
+                    return false;
+                }
+
+                is_subsequence(&query_segments, &candidate_segments)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if matches.len() == 1 {
+            return matches.pop();
+        }
+
+        None
+    }
+}
+
+fn is_subsequence<'a>(query_segments: &[&'a str], candidate_segments: &[&'a str]) -> bool {
+    let mut query_index = 0usize;
+
+    for segment in candidate_segments {
+        if query_index < query_segments.len() && query_segments[query_index] == *segment {
+            query_index += 1;
+            if query_index == query_segments.len() {
+                return true;
+            }
+        }
+    }
+
+    query_index == query_segments.len()
 }
 
 impl TryFrom<Vec<Block>> for BlockSet {

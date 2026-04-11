@@ -57,14 +57,20 @@ cargo run -p sva_cli -- blockize \
   --include-paths /home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/ip/prim/rtl,/home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/dv/sv/dv_utils
 ```
 
-Ibex static slice with a fully qualified signal:
+Ibex static slice for the simple-system top-level:
 
 ```bash
 cargo run -p sva_cli -- slice --static \
   --project-path /home/lzz/exp_wkdir/ibex_test/ibex/rtl \
+  --sv /home/lzz/exp_wkdir/ibex_test/ibex/examples/simple_system/rtl/ibex_simple_system.sv \
   --include-paths /home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/ip/prim/rtl,/home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/dv/sv/dv_utils \
-  --signal TOP.ibex_top_tracing.u_ibex_top.u_ibex_core.ex_block_i.alu_i.adder_result_o
+  --signal TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o \
+  > ibex_static_slice.json
 ```
+
+The Ibex example above uses `--project-path` for `ibex/rtl`, and adds
+`examples/simple_system/rtl/ibex_simple_system.sv` explicitly with `--sv`
+because that top-level wrapper is outside the scanned `rtl/` tree.
 
 ## Library Usage
 

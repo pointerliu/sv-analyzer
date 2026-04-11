@@ -163,6 +163,40 @@ fn static_slicer_implements_shared_slicer_trait_with_none_time_nodes() {
 }
 
 #[test]
+fn static_slice_resolves_signal_with_omitted_intermediate_instance() {
+    let canonical_signal = "TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o";
+    let query_signal = "TOP.ibex_simple_system.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o";
+
+    let block_set = BlockSet::new(vec![Block::new(
+        BlockId(1),
+        BlockType::Assign,
+        CircuitType::Combinational,
+        "demo",
+        "design.sv",
+        10,
+        10,
+        vec![entry(
+            &[canonical_signal],
+            &["TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_if_o"],
+        )],
+        "assign pc_id_o = pc_if_o;",
+    )
+    .unwrap()])
+    .unwrap();
+
+    let graph = StaticSlicer::new(block_set)
+        .slice(&SliceRequest {
+            signal: SignalNode::named(query_signal),
+            time: Timestamp(0),
+            min_time: Timestamp(0),
+        })
+        .unwrap();
+
+    assert_eq!(graph.blocks.len(), 1);
+    assert_eq!(graph.blocks[0].id.0, 1);
+}
+
+#[test]
 fn static_slice_keeps_literals_as_terminal_nodes() {
     let block_set = BlockSet::new(vec![Block::new(
         BlockId(1),

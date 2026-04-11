@@ -39,10 +39,10 @@ impl BluesSlicer {
     }
 
     pub fn slice(&self, request: &SliceRequest) -> Result<InstructionExecutionPath> {
-        self.block_set.validate_signal_has_driver(&request.signal)?;
+        let root_signal = self.block_set.resolve_signal_with_driver(&request.signal)?;
 
-        let mut work = VecDeque::from([(request.signal.clone(), request.time)]);
-        let mut queued = HashSet::from([(request.signal.clone(), request.time.0)]);
+        let mut work = VecDeque::from([(root_signal.clone(), request.time)]);
+        let mut queued = HashSet::from([(root_signal, request.time.0)]);
         let mut visited_signals = HashSet::new();
         let mut visited_driver_outputs = HashSet::new();
         let mut nodes = HashSet::new();

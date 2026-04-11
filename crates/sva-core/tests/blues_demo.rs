@@ -276,6 +276,47 @@ fn blues_keeps_literals_as_terminal_nodes() {
     }));
 }
 
+#[test]
+fn blues_resolves_signal_with_omitted_intermediate_instance() {
+    let canonical_signal = "TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o";
+    let query_signal = "TOP.ibex_simple_system.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o";
+
+    let block_set = BlockSet::new(vec![Block::new(
+        BlockId(77),
+        BlockType::Assign,
+        CircuitType::Combinational,
+        "ibex_if_stage",
+        "ibex_if_stage.sv",
+        501,
+        501,
+        vec![DataflowEntry {
+            output: vec![SignalNode::named(canonical_signal)],
+            inputs: HashSet::from([SignalNode::named(
+                "TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_if_o",
+            )]),
+        }],
+        "assign pc_id_o = pc_if_o;",
+    )
+    .unwrap()])
+    .unwrap();
+
+    let path = BluesSlicer::new(block_set, Arc::new(FixtureCoverage::covered([])))
+        .slice(&SliceRequest {
+            signal: SignalNode::named(query_signal),
+            time: Timestamp(3),
+            min_time: Timestamp(0),
+        })
+        .unwrap();
+
+    assert!(path.nodes.iter().any(|node| matches!(
+        node,
+        TimedSliceNode::Block {
+            block_id: BlockId(77),
+            time: Some(Timestamp(3)),
+        }
+    )));
+}
+
 #[derive(Debug, Default)]
 struct FixtureCoverage {
     covered_lines: HashSet<(String, usize, i64)>,

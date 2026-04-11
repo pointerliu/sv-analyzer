@@ -156,3 +156,35 @@ fn block_set_rejects_duplicate_block_ids() {
 
     assert!(result.is_err());
 }
+
+#[test]
+fn block_set_resolves_hierarchical_alias_with_extra_intermediate_instance() {
+    let canonical_signal = "TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o";
+    let queried_signal = "TOP.ibex_simple_system.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o";
+
+    let block_set = BlockSet::new(vec![Block::new(
+        BlockId(42),
+        BlockType::Assign,
+        CircuitType::Combinational,
+        "ibex_if_stage",
+        "ibex_if_stage.sv",
+        100,
+        100,
+        vec![DataflowEntry {
+            output: vec![SignalNode::named(canonical_signal)],
+            inputs: HashSet::from([SignalNode::named(
+                "TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_if_o",
+            )]),
+        }],
+        "assign pc_id_o = pc_if_o;",
+    )
+    .unwrap()])
+    .unwrap();
+
+    let resolved = block_set
+        .resolve_signal_with_driver(&SignalNode::named(queried_signal))
+        .unwrap();
+
+    assert_eq!(resolved.name, canonical_signal);
+    assert_eq!(block_set.drivers_for(&resolved), &[BlockId(42)]);
+}

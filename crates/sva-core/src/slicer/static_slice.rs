@@ -31,16 +31,16 @@ impl StaticSlicer {
     }
 
     pub fn slice(&self, request: &SliceRequest) -> Result<StaticSliceGraph> {
-        self.block_set.validate_signal_has_driver(&request.signal)?;
+        let root_signal = self.block_set.resolve_signal_with_driver(&request.signal)?;
 
         let mut visited = HashSet::new();
         let mut queued = HashSet::new();
-        let mut work = VecDeque::from([request.signal.clone()]);
+        let mut work = VecDeque::from([root_signal.clone()]);
         let mut nodes = HashSet::new();
         let mut block_ids = HashSet::new();
         let mut edge_keys = HashSet::new();
 
-        queued.insert(request.signal.clone());
+        queued.insert(root_signal);
 
         while let Some(signal) = work.pop_front() {
             if signal.is_literal() || !visited.insert(signal.clone()) {
