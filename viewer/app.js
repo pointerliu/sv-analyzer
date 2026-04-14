@@ -41,6 +41,9 @@ const elements = {
   stepShowAllButton: document.querySelector("#step-show-all"),
   stepResetButton: document.querySelector("#step-reset"),
   stepStatus: document.querySelector("#step-status"),
+  zoomControls: document.querySelector("#zoom-controls"),
+  zoomInButton: document.querySelector("#zoom-in"),
+  zoomOutButton: document.querySelector("#zoom-out"),
 }
 
 const sidebarFields = {
@@ -72,6 +75,7 @@ let debugToggleButton = null
 let debugOverlay = null
 let activePointerAction = null
 let suppressNextBlockClick = false
+let panState = null
 
 function setStatus(message, tone = "info") {
   if (elements.statusCard) {
@@ -1011,7 +1015,6 @@ function renderGraph() {
   }
 
   const svg = elements.graphCanvas
-  svg.setAttribute("viewBox", `0 0 ${appState.layout.width} ${appState.layout.height}`)
 
   const defs = createSvgElement("defs")
   const scopeLayer = createSvgElement("g", { class: "scope-layer" })
@@ -1244,7 +1247,106 @@ function renderGraph() {
   }
 
   svg.replaceChildren(defs, stageFrame, scopeLayer, edgeLayer, blockLayer, debugLayer)
+  fitViewBoxToVisibleBlocks()
   syncDebugUi()
+}
+
+function fitViewBoxToVisibleBlocks() {
+  const svg = elements.graphCanvas
+  if (!appState.layout) return
+
+  if (!appState.stepMode) {
+    // Full graph mode: use full layout dimensions
+    svg.setAttribute("viewBox", `0 0 ${appState.layout.width} ${appState.layout.height}`)
+    return
+  }
+
+  if (appState.visibleNodeIds.size === 0) {
+    // No visible blocks: show a small default canvas
+    svg.setAttribute("viewBox", "0 0 960 720")
+    return
+  }
+
+  // Compute bounding box of visible blocks only (not full scopes)
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+
+  for (const nodeId of appState.visibleNodeIds) {
+    const rect = appState.layout.blocks.get(nodeId)
+    if (!rect) continue
+    minX = Math.min(minX, rect.x)
+    minY = Math.min(minY, rect.y)
+    maxX = Math.max(maxX, rect.x + (rect.width || BLOCK_W))
+    maxY = Math.max(maxY, rect.y + (rect.height || BLOCK_H))
+  }
+
+  if (!isFinite(minX)) {
+    svg.setAttribute("viewBox", "0 0 960 720")
+    return
+  }
+
+  const pad = STAGE_PAD * 2
+  const vbX = Math.max(0, minX - pad)
+  const vbY = Math.max(0, minY - pad)
+  const vbW = Math.max(400, maxX - minX + pad * 2)
+  const vbH = Math.max(300, maxY - minY + pad * 2)
+  svg.setAttribute("viewBox", `${vbX} ${vbY} ${vbW} ${vbH}`)
+}
+
+function initPanSupport() {
+  const svg = elements.graphCanvas
+  if (!svg) return
+
+  svg.addEventListener("contextmenu", (e) => e.preventDefault())
+
+  svg.addEventListener("mousedown", (e) => {
+    if (e.button !== 2) return
+    e.preventDefault()
+    const vb = svg.viewBox.baseVal
+    panState = {
+      startX: e.clientX,
+      startY: e.clientY,
+      vbX: vb.x,
+      vbY: vb.y,
+      vbW: vb.width,
+      vbH: vb.height,
+    }
+  })
+
+  window.addEventListener("mousemove", (e) => {
+    if (!panState) return
+    e.preventDefault()
+    const svg = elements.graphCanvas
+    const rect = svg.getBoundingClientRect()
+    const scaleX = panState.vbW / rect.width
+    const scaleY = panState.vbH / rect.height
+    const dx = (e.clientX - panState.startX) * scaleX
+    const dy = (e.clientY - panState.startY) * scaleY
+    svg.setAttribute("viewBox",
+      `${panState.vbX - dx} ${panState.vbY - dy} ${panState.vbW} ${panState.vbH}`)
+  })
+
+  window.addEventListener("mouseup", (e) => {
+    if (e.button === 2 && panState) {
+      panState = null
+    }
+  })
+}
+
+function zoomCanvas(factor) {
+  const svg = elements.graphCanvas
+  const vb = svg.viewBox.baseVal
+  if (!vb.width || !vb.height) return
+  const cx = vb.x + vb.width / 2
+  const cy = vb.y + vb.height / 2
+  const newW = vb.width * factor
+  const newH = vb.height * factor
+  svg.setAttribute("viewBox",
+    `${cx - newW / 2} ${cy - newH / 2} ${newW} ${newH}`)
+}
+
+function updateZoomControls() {
+  if (!elements.zoomControls) return
+  elements.zoomControls.hidden = !appState.normalizedGraph
 }
 
 function updateDebugState() {
@@ -1416,6 +1518,7 @@ function parseAndLoad(jsonText, sourceLabel) {
     resetSelectionPlaceholders()
     renderGraph()
     updateDebugState()
+    updateZoomControls()
     setStatus(`${summarizeGraph(raw, normalized)} Source: ${sourceLabel}.`, "success")
   } catch (error) {
     appState.rawGraph = null
@@ -1500,11 +1603,16 @@ elements.stepResetButton?.addEventListener("click", () => {
   stepReset()
 })
 
+elements.zoomInButton?.addEventListener("click", () => zoomCanvas(0.75))
+elements.zoomOutButton?.addEventListener("click", () => zoomCanvas(1.333))
+
 sidebarFields.sourceFile = ensureSidebarField("meta-source-file", "Source File")
 sidebarFields.lineRange = ensureSidebarField("meta-line-range", "Line Range")
 resetSelectionPlaceholders()
 ensureDebugUi()
+initPanSupport()
 renderEmptyState()
 updateDebugState()
 updateStepControls()
+updateZoomControls()
 setStatus("Waiting for slice JSON.", "info")

@@ -483,6 +483,34 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.button-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-strong);
+  color: var(--text);
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.button-icon:hover {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+
 .debug-toggle {
   flex: 0 0 auto;
   min-width: 124px;
