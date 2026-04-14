@@ -464,6 +464,25 @@ textarea:focus-visible {
   pointer-events: none;
 }
 
+.step-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.step-controls button {
+  flex: 0 0 auto;
+  min-width: 100px;
+}
+
+.step-status {
+  color: var(--muted);
+  font-family: "Fira Code", "Cascadia Code", monospace;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
 .debug-toggle {
   flex: 0 0 auto;
   min-width: 124px;

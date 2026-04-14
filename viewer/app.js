@@ -36,6 +36,11 @@ const elements = {
   graphCanvas: document.querySelector("#graph-canvas"),
   graphHeader: document.querySelector(".graph-header"),
   graphSurface: document.querySelector(".graph-surface"),
+  stepControls: document.querySelector("#step-controls"),
+  stepNextButton: document.querySelector("#step-next"),
+  stepShowAllButton: document.querySelector("#step-show-all"),
+  stepResetButton: document.querySelector("#step-reset"),
+  stepStatus: document.querySelector("#step-status"),
 }
 
 const sidebarFields = {
@@ -56,6 +61,11 @@ const appState = {
   blockOffsets: new Map(),
   scopeSizeAdjustments: new Map(),
   debugVisible: readStoredDebugPreference(),
+  stepMode: false,
+  visibleNodeIds: new Set(),
+  frontier: [],
+  frontierIndex: 0,
+  seedNodeIds: new Set(),
 }
 
 let debugToggleButton = null
@@ -486,6 +496,8 @@ function is_slice_graph_shape(raw) {
     typeof raw === "object" &&
     raw !== null &&
     !Array.isArray(raw) &&
+    typeof raw.target === "string" &&
+    raw.target.length > 0 &&
     Array.isArray(raw.blocks) &&
     Array.isArray(raw.nodes) &&
     Array.isArray(raw.edges)
@@ -1025,7 +1037,10 @@ function renderGraph() {
     }
   })
 
+  const isNodeVisible = (nodeId) => !appState.stepMode || appState.visibleNodeIds.has(nodeId)
+
   for (const route of appState.layout.edgeRoutes) {
+    if (!isNodeVisible(route.fromNode.id) || !isNodeVisible(route.toNode.id)) continue
     const isSelected = route.edgeId === appState.selectedEdgeId
     const path = createSvgElement("path", {
       d: buildCurvedPath(route.points),
@@ -1062,8 +1077,19 @@ function renderGraph() {
     }
   }
 
+  // Determine which scopes have at least one visible block
+  const visibleScopes = new Set()
+  if (appState.stepMode) {
+    for (const blockNode of appState.normalizedGraph.blockNodes) {
+      if (appState.visibleNodeIds.has(blockNode.id)) {
+        visibleScopes.add(blockNode.scope)
+      }
+    }
+  }
+
   const sortedScopes = Array.from(appState.layout.scopes.entries()).sort(([, left], [, right]) => left.depth - right.depth || left.y - right.y || left.x - right.x)
   for (const [scopeName, rect] of sortedScopes) {
+    if (appState.stepMode && !visibleScopes.has(scopeName)) continue
     scopeLayer.append(
       createSvgElement("rect", {
         x: rect.x,
@@ -1109,6 +1135,7 @@ function renderGraph() {
 
   const sortedBlocks = appState.normalizedGraph.blockNodes.slice().sort((left, right) => left.id - right.id)
   for (const blockNode of sortedBlocks) {
+    if (!isNodeVisible(blockNode.id)) continue
     const rect = appState.layout.blocks.get(blockNode.id)
     const isSelected = blockNode.id === appState.selectedBlockId
     const isTargetDriver = blockNode.id === appState.targetDriverBlockId
@@ -1125,7 +1152,7 @@ function renderGraph() {
       transform: `translate(${rect.x}, ${rect.y})`,
       tabindex: 0,
       role: "button",
-      "aria-label": `${blockNode.block_type} block b${blockNode.id} in ${blockNode.scope}${typeof blockNode.time === "number" ? ` at time ${blockNode.time}` : ""}`,
+      "aria-label": `${blockNode.block_type} block b${blockNode.meta?.id ?? blockNode.id} in ${blockNode.scope}${typeof blockNode.time === "number" ? ` at time ${blockNode.time}` : ""}`,
       "aria-pressed": isSelected ? "true" : "false",
     })
     group.addEventListener("click", () => {
@@ -1177,7 +1204,7 @@ function renderGraph() {
       y: 42,
       class: "block-id-label",
     })
-    idLabel.textContent = `b${blockNode.id}`
+    idLabel.textContent = `b${blockNode.meta?.id ?? blockNode.id}`
     group.append(idLabel)
 
     if (typeof blockNode.time === "number") {
@@ -1195,6 +1222,7 @@ function renderGraph() {
   }
 
   for (const route of appState.layout.edgeRoutes) {
+    if (!isNodeVisible(route.fromNode.id) || !isNodeVisible(route.toNode.id)) continue
     debugLayer.append(
       createSvgElement("path", {
         d: buildPolylinePath(route.points),
@@ -1236,6 +1264,125 @@ function updateDebugState() {
   }
 }
 
+function buildBfsFrontier(graph, seedNodeIds) {
+  const visited = new Set(seedNodeIds)
+  const queue = [...seedNodeIds]
+  const frontier = []
+
+  // Build reverse adjacency: for each node, which nodes feed into it
+  const incomingByNode = new Map()
+  for (const edge of graph.edges) {
+    if (!edge.fromNode || !edge.toNode) continue
+    const toId = edge.toNode.id
+    if (!incomingByNode.has(toId)) {
+      incomingByNode.set(toId, new Set())
+    }
+    incomingByNode.get(toId).add(edge.fromNode.id)
+  }
+
+  // BFS backward from seed nodes
+  let head = 0
+  while (head < queue.length) {
+    const nodeId = queue[head++]
+    const incoming = incomingByNode.get(nodeId)
+    if (!incoming) continue
+    for (const fromId of incoming) {
+      if (visited.has(fromId)) continue
+      // Only include block nodes
+      const fromNode = graph.nodesById.get(fromId)
+      if (!fromNode || fromNode.kind !== "block") continue
+      visited.add(fromId)
+      queue.push(fromId)
+      frontier.push(fromId)
+    }
+  }
+
+  return frontier
+}
+
+function initStepMode(graph, targetSignal) {
+  if (!graph || !targetSignal) {
+    appState.stepMode = false
+    return
+  }
+
+  // Find seed nodes: blocks that produce the target signal
+  const seedNodeIds = new Set()
+  for (const edge of graph.edges) {
+    if (!edge.fromNode || edge.fromNode.kind !== "block") continue
+    if (signalMatchesTarget(edge.signal?.name ?? edge.label ?? null, targetSignal)) {
+      seedNodeIds.add(edge.fromNode.id)
+    }
+  }
+
+  if (seedNodeIds.size === 0) {
+    appState.stepMode = false
+    return
+  }
+
+  const frontier = [...seedNodeIds, ...buildBfsFrontier(graph, seedNodeIds)]
+
+  appState.stepMode = true
+  appState.seedNodeIds = seedNodeIds
+  appState.visibleNodeIds = new Set()
+  appState.frontier = frontier
+  appState.frontierIndex = 0
+  updateStepControls()
+}
+
+function stepNext() {
+  if (!appState.stepMode) return
+  if (appState.frontierIndex >= appState.frontier.length) return
+
+  appState.visibleNodeIds.add(appState.frontier[appState.frontierIndex])
+  appState.frontierIndex++
+  recomputeInteractiveLayout()
+  renderGraph()
+  updateDebugState()
+  updateStepControls()
+}
+
+function stepShowAll() {
+  appState.stepMode = false
+  recomputeInteractiveLayout()
+  renderGraph()
+  updateDebugState()
+  updateStepControls()
+}
+
+function stepReset() {
+  if (!appState.normalizedGraph || !appState.targetSignal) return
+  initStepMode(appState.normalizedGraph, appState.targetSignal)
+  recomputeInteractiveLayout()
+  renderGraph()
+  updateDebugState()
+}
+
+function updateStepControls() {
+  if (!elements.stepControls) return
+
+  if (!appState.normalizedGraph) {
+    elements.stepControls.hidden = true
+    return
+  }
+
+  elements.stepControls.hidden = false
+
+  if (appState.stepMode) {
+    elements.stepNextButton.disabled = appState.frontierIndex >= appState.frontier.length
+    elements.stepResetButton.disabled = false
+    const totalBlocks = appState.normalizedGraph.blockNodes.length
+    const visible = appState.visibleNodeIds.size
+    const remaining = appState.frontier.length - appState.frontierIndex
+    elements.stepStatus.textContent = `${visible} visible / ${totalBlocks} total — ${remaining} in queue`
+  } else {
+    elements.stepNextButton.disabled = true
+    elements.stepResetButton.disabled = !appState.targetSignal
+    const totalBlocks = appState.normalizedGraph.blockNodes.length
+    elements.stepStatus.textContent = `Showing all ${totalBlocks} blocks`
+  }
+}
+
 function parseAndLoad(jsonText, sourceLabel) {
   const trimmed = jsonText.trim()
 
@@ -1247,7 +1394,7 @@ function parseAndLoad(jsonText, sourceLabel) {
   try {
     const raw = JSON.parse(trimmed)
     if (!is_slice_graph_shape(raw)) {
-      throw new Error("Expected an object with blocks, nodes, and edges arrays")
+      throw new Error("Expected a slice JSON with target, blocks, nodes, and edges fields")
     }
 
     const normalized = normalizeSliceGraph(raw)
@@ -1264,6 +1411,7 @@ function parseAndLoad(jsonText, sourceLabel) {
     appState.selectedBlockId = null
     appState.targetSignal = typeof raw.target === "string" && raw.target ? raw.target : null
     appState.targetDriverBlockId = computeTargetDriverBlockId(normalized, appState.targetSignal)
+    initStepMode(normalized, appState.targetSignal)
     recomputeInteractiveLayout()
     resetSelectionPlaceholders()
     renderGraph()
@@ -1281,9 +1429,15 @@ function parseAndLoad(jsonText, sourceLabel) {
     appState.targetDriverBlockId = null
     appState.blockOffsets = new Map()
     appState.scopeSizeAdjustments = new Map()
+    appState.stepMode = false
+    appState.visibleNodeIds = new Set()
+    appState.frontier = []
+    appState.frontierIndex = 0
+    appState.seedNodeIds = new Set()
     resetSelectionPlaceholders()
     renderGraph()
     updateDebugState()
+    updateStepControls()
     const message = error instanceof Error ? error.message : String(error)
     setStatus(`Could not parse JSON: ${message}`, "error")
   }
@@ -1334,10 +1488,23 @@ elements.loadDemoButton?.addEventListener("click", async () => {
   await loadDemo()
 })
 
+elements.stepNextButton?.addEventListener("click", () => {
+  stepNext()
+})
+
+elements.stepShowAllButton?.addEventListener("click", () => {
+  stepShowAll()
+})
+
+elements.stepResetButton?.addEventListener("click", () => {
+  stepReset()
+})
+
 sidebarFields.sourceFile = ensureSidebarField("meta-source-file", "Source File")
 sidebarFields.lineRange = ensureSidebarField("meta-line-range", "Line Range")
 resetSelectionPlaceholders()
 ensureDebugUi()
 renderEmptyState()
 updateDebugState()
+updateStepControls()
 setStatus("Waiting for slice JSON.", "info")
