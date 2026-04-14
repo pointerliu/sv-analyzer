@@ -125,37 +125,45 @@ fn cli_blockize_processes_multi_submodule_demo_modules() {
         .filter_map(|block| block["module_scope"].as_str())
         .collect::<std::collections::BTreeSet<_>>();
 
-    assert!(scopes.contains("top"), "missing top blocks: {json:?}");
+    // After elaboration, scopes are hierarchical paths like TOP.tb.u_top, TOP.tb.u_top.u_sub1, etc.
     assert!(
-        scopes.contains("submodule1"),
-        "missing submodule1 blocks: {json:?}"
+        scopes.iter().any(|s| s.ends_with("u_top")),
+        "missing top blocks: {scopes:?}"
     );
     assert!(
-        scopes.contains("submodule2"),
-        "missing submodule2 blocks: {json:?}"
+        scopes.iter().any(|s| s.ends_with("u_sub1")),
+        "missing submodule1 blocks: {scopes:?}"
+    );
+    assert!(
+        scopes.iter().any(|s| s.ends_with("u_sub2")),
+        "missing submodule2 blocks: {scopes:?}"
     );
 
     assert!(
         json["blocks"].as_array().unwrap().iter().any(|block| {
-            block["module_scope"] == "submodule1" && block["block_type"] == "Assign"
+            block["module_scope"].as_str().map_or(false, |s| s.ends_with("u_sub1"))
+                && block["block_type"] == "Assign"
         }),
         "expected assign logic in submodule1: {json:?}"
     );
     assert!(
         json["blocks"].as_array().unwrap().iter().any(|block| {
-            block["module_scope"] == "submodule1" && block["block_type"] == "Always"
+            block["module_scope"].as_str().map_or(false, |s| s.ends_with("u_sub1"))
+                && block["block_type"] == "Always"
         }),
         "expected always/always_comb logic in submodule1: {json:?}"
     );
     assert!(
         json["blocks"].as_array().unwrap().iter().any(|block| {
-            block["module_scope"] == "submodule2" && block["block_type"] == "Always"
+            block["module_scope"].as_str().map_or(false, |s| s.ends_with("u_sub2"))
+                && block["block_type"] == "Always"
         }),
         "expected sequential always logic in submodule2: {json:?}"
     );
     assert!(
         json["blocks"].as_array().unwrap().iter().any(|block| {
-            block["module_scope"] == "submodule2" && block["block_type"] == "Assign"
+            block["module_scope"].as_str().map_or(false, |s| s.ends_with("u_sub2"))
+                && block["block_type"] == "Assign"
         }),
         "expected assign logic in submodule2: {json:?}"
     );
@@ -194,17 +202,20 @@ fn cli_blockize_supports_project_path_and_external_include_paths() {
         .filter_map(|block| block["module_scope"].as_str())
         .collect::<std::collections::BTreeSet<_>>();
 
+    // After elaboration, scopes are hierarchical like TOP.demo_top, TOP.demo_top.u_helper
     assert!(
-        scopes.contains("demo_top"),
-        "missing top module blocks: {json:?}"
+        scopes.iter().any(|s| s.ends_with("demo_top")),
+        "missing top module blocks: {scopes:?}"
     );
     assert!(
-        scopes.contains("helper_mod"),
-        "missing discovered helper module blocks: {json:?}"
+        scopes.iter().any(|s| s.ends_with("u_helper")),
+        "missing discovered helper module blocks: {scopes:?}"
     );
+    // Signal names are now fully qualified after elaboration
+    let drivers = json["signal_to_drivers"].as_object().unwrap();
     assert!(
-        json["signal_to_drivers"].get("rvfi_valid").is_some(),
-        "expected RVFI-gated driver in blockized output: {json:?}"
+        drivers.keys().any(|k| k.ends_with("rvfi_valid")),
+        "expected RVFI-gated driver in blockized output: {drivers:?}"
     );
 
     fixture.cleanup();

@@ -7,6 +7,7 @@ use sva_core::types::{BlockId, SignalNode, Timestamp};
 #[test]
 fn instruction_execution_path_serializes_as_stable_json_graph() {
     let path: InstructionExecutionPath = SliceGraph {
+        target: "result".into(),
         nodes: vec![
             TimedSliceNode::Block {
                 block_id: BlockId(17),
@@ -46,6 +47,7 @@ fn instruction_execution_path_serializes_as_stable_json_graph() {
     assert_eq!(
         json,
         json!({
+            "target": "result",
             "nodes": [
                 {
                     "kind": "block",
@@ -96,6 +98,7 @@ fn instruction_execution_path_serializes_as_stable_json_graph() {
 #[test]
 fn static_slice_graph_serializes_without_time_annotations() {
     let graph: SliceGraph<StaticBlockNode> = SliceGraph {
+        target: "result".into(),
         nodes: vec![StaticBlockNode::Block {
             block_id: BlockId(5),
             time: None,
@@ -119,6 +122,7 @@ fn static_slice_graph_serializes_without_time_annotations() {
     assert_eq!(
         json,
         json!({
+            "target": "result",
             "nodes": [
                 {
                     "kind": "block",
@@ -147,6 +151,7 @@ fn static_slice_graph_serializes_without_time_annotations() {
 #[test]
 fn stable_export_rejects_duplicate_dynamic_nodes() {
     let graph: InstructionExecutionPath = SliceGraph {
+        target: "x".into(),
         nodes: vec![
             TimedSliceNode::Block {
                 block_id: BlockId(17),
@@ -174,6 +179,7 @@ fn stable_export_rejects_duplicate_dynamic_nodes() {
 #[test]
 fn stable_export_rejects_duplicate_static_nodes() {
     let graph: SliceGraph<StaticBlockNode> = SliceGraph {
+        target: "x".into(),
         nodes: vec![
             StaticBlockNode::Block {
                 block_id: BlockId(5),

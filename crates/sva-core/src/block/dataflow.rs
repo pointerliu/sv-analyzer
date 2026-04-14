@@ -1549,16 +1549,18 @@ fn keyword_start_line(
 
     let offset_line = keyword_line(syntax_tree, source_text, keyword)?;
     let source_line = align_line_to_token(source_text, offset_line.source_line, token);
-    if line_contains_token(source_text, source_line, token) && source_line.abs_diff(ast_line) <= 32
-    {
+    if line_contains_token(source_text, source_line, token) {
         return Some(LineLocation {
             source_line,
             ast_line,
         });
     }
 
+    // Use the origin-resolved source line even when the token isn't found
+    // at that exact position (e.g. inside generate blocks or macro expansions).
+    // Fall back to offset_line rather than ast_line which may exceed the file length.
     Some(LineLocation {
-        source_line: ast_line,
+        source_line: offset_line.source_line,
         ast_line,
     })
 }

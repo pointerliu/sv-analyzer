@@ -185,6 +185,7 @@ impl BluesSlicer {
         block_ids.sort_by_key(|block_id| block_id.0);
 
         Ok(InstructionExecutionPath {
+            target: request.signal.name.clone(),
             nodes,
             edges: edge_keys
                 .into_iter()

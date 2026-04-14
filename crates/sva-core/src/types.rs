@@ -154,6 +154,7 @@ pub struct StableSliceEdgeJson {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StableSliceGraphJson {
+    pub target: String,
     pub nodes: Vec<StableSliceNodeJson>,
     pub edges: Vec<StableSliceEdgeJson>,
     pub blocks: Vec<BlockJson>,

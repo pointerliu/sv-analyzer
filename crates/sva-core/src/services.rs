@@ -53,7 +53,8 @@ pub struct WaveValueRequest {
 
 pub fn blockize(req: BlockizeRequest) -> Result<BlockSet> {
     let parsed_files = parse_sv_files(&req.sv_files, &req.parse_options)?;
-    let block_set = DataflowBlockizer.blockize(&parsed_files)?;
+    let block_set =
+        elaborate_block_set(&parsed_files, &DataflowBlockizer.blockize(&parsed_files)?)?;
     Ok(block_set)
 }
 
