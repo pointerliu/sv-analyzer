@@ -94,7 +94,23 @@ cargo run -p sva_cli -- slice --static \
   > ibex_static_slice.json
 ```
 
-The Ibex example above uses `--project-path` for `ibex/rtl`, and adds
+Ibex dynamic (blues) slice for the simple-system top-level:
+
+```bash
+cargo run -p sva_cli -- slice \
+  --project-path /home/lzz/exp_wkdir/ibex_test/ibex/rtl \
+  --sv /home/lzz/exp_wkdir/ibex_test/ibex/examples/simple_system/rtl/ibex_simple_system.sv \
+  --include-paths /home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/ip/prim/rtl,/home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/dv/sv/dv_utils \
+  --vcd /home/lzz/exp_wkdir/ibex_test/ibex/build/lowrisc_ibex_ibex_simple_system_cosim_0/sim-verilator/sim.fst \
+  --signal TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o \
+  --clock TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.clk_i \
+  --clk-step 2 \
+  --time 19 \
+  --min-time 11 \
+  > ibex_blues.json
+```
+
+The Ibex examples above use `--project-path` for `ibex/rtl`, and add
 `examples/simple_system/rtl/ibex_simple_system.sv` explicitly with `--sv`
 because that top-level wrapper is outside the scanned `rtl/` tree.
 
