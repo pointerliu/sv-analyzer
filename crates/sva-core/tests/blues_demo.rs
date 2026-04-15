@@ -12,30 +12,28 @@ use sva_core::types::{BlockId, SignalNode, SignalNodeKind, Timestamp};
 #[test]
 fn blues_backtracks_sequential_state_until_coverage_hit_and_respects_min_time() {
     let block_set = BlockSet::new(vec![
-        Block::new(
-            BlockId(1),
-            BlockType::Assign,
-            CircuitType::Combinational,
-            "demo",
-            "design.sv",
-            10,
-            10,
-            vec![entry("tmp", &["a", "b"])],
-            "assign tmp = a & b;",
-        )
-        .unwrap(),
-        Block::new(
-            BlockId(2),
-            BlockType::Always,
-            CircuitType::Sequential,
-            "demo",
-            "design.sv",
-            20,
-            20,
-            vec![entry("result", &["tmp"])],
-            "always_ff @(posedge clk) result <= tmp;",
-        )
-        .unwrap(),
+        Block::builder()
+            .id(BlockId(1))
+            .block_type(BlockType::Assign)
+            .circuit_type(CircuitType::Combinational)
+            .module_scope("demo")
+            .source_file("design.sv")
+            .lines(10, 10)
+            .dataflow(vec![entry("tmp", &["a", "b"])])
+            .code_snippet("assign tmp = a & b;")
+            .build()
+            .unwrap(),
+        Block::builder()
+            .id(BlockId(2))
+            .block_type(BlockType::Always)
+            .circuit_type(CircuitType::Sequential)
+            .module_scope("demo")
+            .source_file("design.sv")
+            .lines(20, 20)
+            .dataflow(vec![entry("result", &["tmp"])])
+            .code_snippet("always_ff @(posedge clk) result <= tmp;")
+            .build()
+            .unwrap(),
     ])
     .unwrap();
 
@@ -109,54 +107,50 @@ fn blues_backtracks_sequential_state_until_coverage_hit_and_respects_min_time() 
 #[test]
 fn blues_keeps_dependencies_from_distinct_outputs_of_same_block() {
     let block_set = BlockSet::new(vec![
-        Block::new(
-            BlockId(1),
-            BlockType::Assign,
-            CircuitType::Combinational,
-            "demo",
-            "design.sv",
-            10,
-            10,
-            vec![entry("left_src", &["a"])],
-            "assign left_src = a;",
-        )
-        .unwrap(),
-        Block::new(
-            BlockId(2),
-            BlockType::Assign,
-            CircuitType::Combinational,
-            "demo",
-            "design.sv",
-            11,
-            11,
-            vec![entry("right_src", &["b"])],
-            "assign right_src = b;",
-        )
-        .unwrap(),
-        Block::new(
-            BlockId(3),
-            BlockType::Assign,
-            CircuitType::Combinational,
-            "demo",
-            "design.sv",
-            12,
-            13,
-            vec![entry("left", &["left_src"]), entry("right", &["right_src"])],
-            "assign left = left_src; assign right = right_src;",
-        )
-        .unwrap(),
-        Block::new(
-            BlockId(4),
-            BlockType::Assign,
-            CircuitType::Combinational,
-            "demo",
-            "design.sv",
-            14,
-            14,
-            vec![entry("result", &["left", "right"])],
-            "assign result = left ^ right;",
-        )
-        .unwrap(),
+        Block::builder()
+            .id(BlockId(1))
+            .block_type(BlockType::Assign)
+            .circuit_type(CircuitType::Combinational)
+            .module_scope("demo")
+            .source_file("design.sv")
+            .lines(10, 10)
+            .dataflow(vec![entry("left_src", &["a"])])
+            .code_snippet("assign left_src = a;")
+            .build()
+            .unwrap(),
+        Block::builder()
+            .id(BlockId(2))
+            .block_type(BlockType::Assign)
+            .circuit_type(CircuitType::Combinational)
+            .module_scope("demo")
+            .source_file("design.sv")
+            .lines(11, 11)
+            .dataflow(vec![entry("right_src", &["b"])])
+            .code_snippet("assign right_src = b;")
+            .build()
+            .unwrap(),
+        Block::builder()
+            .id(BlockId(3))
+            .block_type(BlockType::Assign)
+            .circuit_type(CircuitType::Combinational)
+            .module_scope("demo")
+            .source_file("design.sv")
+            .lines(12, 13)
+            .dataflow(vec![entry("left", &["left_src"]), entry("right", &["right_src"])])
+            .code_snippet("assign left = left_src; assign right = right_src;")
+            .build()
+            .unwrap(),
+        Block::builder()
+            .id(BlockId(4))
+            .block_type(BlockType::Assign)
+            .circuit_type(CircuitType::Combinational)
+            .module_scope("demo")
+            .source_file("design.sv")
+            .lines(14, 14)
+            .dataflow(vec![entry("result", &["left", "right"])])
+            .code_snippet("assign result = left ^ right;")
+            .build()
+            .unwrap(),
     ])
     .unwrap();
 
@@ -218,21 +212,20 @@ fn blues_keeps_dependencies_from_distinct_outputs_of_same_block() {
 
 #[test]
 fn blues_keeps_literals_as_terminal_nodes() {
-    let block_set = BlockSet::new(vec![Block::new(
-        BlockId(2),
-        BlockType::Always,
-        CircuitType::Sequential,
-        "demo",
-        "design.sv",
-        53,
-        55,
-        vec![DataflowEntry {
+    let block_set = BlockSet::new(vec![Block::builder()
+        .id(BlockId(2))
+        .block_type(BlockType::Always)
+        .circuit_type(CircuitType::Sequential)
+        .module_scope("demo")
+        .source_file("design.sv")
+        .lines(53, 55)
+        .dataflow(vec![DataflowEntry {
             output: vec![SignalNode::named("result")],
             inputs: HashSet::from([SignalNode::named("rst_n"), SignalNode::literal("8'h0")]),
-        }],
-        "always_ff @(posedge clk or negedge rst_n) if (!rst_n) result <= 8'h0;",
-    )
-    .unwrap()])
+        }])
+        .code_snippet("always_ff @(posedge clk or negedge rst_n) if (!rst_n) result <= 8'h0;")
+        .build()
+        .unwrap()])
     .unwrap();
 
     let path = BluesSlicer::new(
@@ -281,23 +274,22 @@ fn blues_resolves_signal_with_omitted_intermediate_instance() {
     let canonical_signal = "TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o";
     let query_signal = "TOP.ibex_simple_system.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o";
 
-    let block_set = BlockSet::new(vec![Block::new(
-        BlockId(77),
-        BlockType::Assign,
-        CircuitType::Combinational,
-        "ibex_if_stage",
-        "ibex_if_stage.sv",
-        501,
-        501,
-        vec![DataflowEntry {
+    let block_set = BlockSet::new(vec![Block::builder()
+        .id(BlockId(77))
+        .block_type(BlockType::Assign)
+        .circuit_type(CircuitType::Combinational)
+        .module_scope("ibex_if_stage")
+        .source_file("ibex_if_stage.sv")
+        .lines(501, 501)
+        .dataflow(vec![DataflowEntry {
             output: vec![SignalNode::named(canonical_signal)],
             inputs: HashSet::from([SignalNode::named(
                 "TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_if_o",
             )]),
-        }],
-        "assign pc_id_o = pc_if_o;",
-    )
-    .unwrap()])
+        }])
+        .code_snippet("assign pc_id_o = pc_if_o;")
+        .build()
+        .unwrap()])
     .unwrap();
 
     let path = BluesSlicer::new(block_set, Arc::new(FixtureCoverage::covered([])))

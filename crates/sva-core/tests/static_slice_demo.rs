@@ -30,42 +30,39 @@ fn instruction_execution_path_uses_shared_graph_container() {
 #[test]
 fn static_slice_returns_timeless_graph_for_transitive_dependencies() {
     let block_set = BlockSet::new(vec![
-        Block::new(
-            BlockId(1),
-            BlockType::Assign,
-            CircuitType::Combinational,
-            "demo",
-            "design.sv",
-            10,
-            10,
-            vec![entry(&["tmp"], &["a", "b"])],
-            "assign tmp = a & b;",
-        )
-        .unwrap(),
-        Block::new(
-            BlockId(2),
-            BlockType::Always,
-            CircuitType::Sequential,
-            "demo",
-            "design.sv",
-            12,
-            14,
-            vec![entry(&["result"], &["tmp", "c"])],
-            "always_ff @(posedge clk) result <= tmp ^ c;",
-        )
-        .unwrap(),
-        Block::new(
-            BlockId(3),
-            BlockType::ModOutput,
-            CircuitType::Combinational,
-            "demo",
-            "design.sv",
-            20,
-            20,
-            vec![entry(&["sink_result"], &["result"])],
-            "output result;",
-        )
-        .unwrap(),
+        Block::builder()
+            .id(BlockId(1))
+            .block_type(BlockType::Assign)
+            .circuit_type(CircuitType::Combinational)
+            .module_scope("demo")
+            .source_file("design.sv")
+            .lines(10, 10)
+            .dataflow(vec![entry(&["tmp"], &["a", "b"])])
+            .code_snippet("assign tmp = a & b;")
+            .build()
+            .unwrap(),
+        Block::builder()
+            .id(BlockId(2))
+            .block_type(BlockType::Always)
+            .circuit_type(CircuitType::Sequential)
+            .module_scope("demo")
+            .source_file("design.sv")
+            .lines(12, 14)
+            .dataflow(vec![entry(&["result"], &["tmp", "c"])])
+            .code_snippet("always_ff @(posedge clk) result <= tmp ^ c;")
+            .build()
+            .unwrap(),
+        Block::builder()
+            .id(BlockId(3))
+            .block_type(BlockType::ModOutput)
+            .circuit_type(CircuitType::Combinational)
+            .module_scope("demo")
+            .source_file("design.sv")
+            .lines(20, 20)
+            .dataflow(vec![entry(&["sink_result"], &["result"])])
+            .code_snippet("output result;")
+            .build()
+            .unwrap(),
     ])
     .unwrap();
 
@@ -129,18 +126,17 @@ fn static_slice_returns_timeless_graph_for_transitive_dependencies() {
 
 #[test]
 fn static_slicer_implements_shared_slicer_trait_with_none_time_nodes() {
-    let block_set = BlockSet::new(vec![Block::new(
-        BlockId(1),
-        BlockType::Assign,
-        CircuitType::Combinational,
-        "demo",
-        "design.sv",
-        10,
-        10,
-        vec![entry(&["result"], &["a"])],
-        "assign result = a;",
-    )
-    .unwrap()])
+    let block_set = BlockSet::new(vec![Block::builder()
+        .id(BlockId(1))
+        .block_type(BlockType::Assign)
+        .circuit_type(CircuitType::Combinational)
+        .module_scope("demo")
+        .source_file("design.sv")
+        .lines(10, 10)
+        .dataflow(vec![entry(&["result"], &["a"])])
+        .code_snippet("assign result = a;")
+        .build()
+        .unwrap()])
     .unwrap();
 
     let slicer = StaticSlicer::new(block_set);
@@ -168,21 +164,20 @@ fn static_slice_resolves_signal_with_omitted_intermediate_instance() {
     let canonical_signal = "TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o";
     let query_signal = "TOP.ibex_simple_system.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o";
 
-    let block_set = BlockSet::new(vec![Block::new(
-        BlockId(1),
-        BlockType::Assign,
-        CircuitType::Combinational,
-        "demo",
-        "design.sv",
-        10,
-        10,
-        vec![entry(
+    let block_set = BlockSet::new(vec![Block::builder()
+        .id(BlockId(1))
+        .block_type(BlockType::Assign)
+        .circuit_type(CircuitType::Combinational)
+        .module_scope("demo")
+        .source_file("design.sv")
+        .lines(10, 10)
+        .dataflow(vec![entry(
             &[canonical_signal],
             &["TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_if_o"],
-        )],
-        "assign pc_id_o = pc_if_o;",
-    )
-    .unwrap()])
+        )])
+        .code_snippet("assign pc_id_o = pc_if_o;")
+        .build()
+        .unwrap()])
     .unwrap();
 
     let graph = StaticSlicer::new(block_set)
@@ -199,21 +194,20 @@ fn static_slice_resolves_signal_with_omitted_intermediate_instance() {
 
 #[test]
 fn static_slice_keeps_literals_as_terminal_nodes() {
-    let block_set = BlockSet::new(vec![Block::new(
-        BlockId(1),
-        BlockType::Always,
-        CircuitType::Sequential,
-        "demo",
-        "design.sv",
-        53,
-        55,
-        vec![DataflowEntry {
+    let block_set = BlockSet::new(vec![Block::builder()
+        .id(BlockId(1))
+        .block_type(BlockType::Always)
+        .circuit_type(CircuitType::Sequential)
+        .module_scope("demo")
+        .source_file("design.sv")
+        .lines(53, 55)
+        .dataflow(vec![DataflowEntry {
             output: vec![SignalNode::named("result")],
             inputs: HashSet::from([SignalNode::named("rst_n"), SignalNode::literal("8'h0")]),
-        }],
-        "always_ff @(posedge clk or negedge rst_n) if (!rst_n) result <= 8'h0;",
-    )
-    .unwrap()])
+        }])
+        .code_snippet("always_ff @(posedge clk or negedge rst_n) if (!rst_n) result <= 8'h0;")
+        .build()
+        .unwrap()])
     .unwrap();
 
     let graph = StaticSlicer::new(block_set)

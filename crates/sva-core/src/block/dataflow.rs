@@ -428,19 +428,19 @@ fn qualify_block(block: &Block, scope: &str, next_block_id: &mut u64) -> Result<
         })
         .collect();
 
-    Block::new_with_ast_lines(
-        take_block_id(next_block_id),
-        block.block_type(),
-        block.circuit_type(),
-        scope,
-        block.source_file(),
-        block.line_start(),
-        block.line_end(),
-        block.ast_line_start(),
-        block.ast_line_end(),
-        dataflow,
-        block.code_snippet(),
-    )
+    Block::builder()
+        .id(take_block_id(next_block_id))
+        .block_type(block.block_type())
+        .circuit_type(block.circuit_type())
+        .module_scope(scope)
+        .source_file(block.source_file())
+        .line_start(block.line_start())
+        .line_end(block.line_end())
+        .ast_line_start(block.ast_line_start())
+        .ast_line_end(block.ast_line_end())
+        .dataflow(dataflow)
+        .code_snippet(block.code_snippet())
+        .build()
 }
 
 fn bridge_port_block(
@@ -489,19 +489,21 @@ fn bridge_port_block(
         _ => return Ok(None),
     };
 
-    Ok(Some(Block::new_with_ast_lines(
-        take_block_id(next_block_id),
-        template_port_block.block_type(),
-        CircuitType::Combinational,
-        child_scope,
-        template_port_block.source_file(),
-        template_port_block.line_start(),
-        template_port_block.line_end(),
-        template_port_block.ast_line_start(),
-        template_port_block.ast_line_end(),
-        dataflow,
-        template_port_block.code_snippet(),
-    )?))
+    Ok(Some(
+        Block::builder()
+            .id(take_block_id(next_block_id))
+            .block_type(template_port_block.block_type())
+            .circuit_type(CircuitType::Combinational)
+            .module_scope(child_scope)
+            .source_file(template_port_block.source_file())
+            .line_start(template_port_block.line_start())
+            .line_end(template_port_block.line_end())
+            .ast_line_start(template_port_block.ast_line_start())
+            .ast_line_end(template_port_block.ast_line_end())
+            .dataflow(dataflow)
+            .code_snippet(template_port_block.code_snippet())
+            .build()?,
+    ))
 }
 
 fn port_name_from_block(block: &Block) -> Option<String> {
@@ -672,32 +674,34 @@ impl BlockCollector {
     }
 
     fn push_block(&mut self, file: &ParsedFile, ctx: BlockContext) -> Result<()> {
-        self.blocks.push(Block::new_with_ast_lines(
-            BlockId(self.next_block_id),
-            ctx.block_type,
-            ctx.circuit_type,
-            &ctx.module_scope,
-            file.path.display().to_string(),
-            ctx.line_start,
-            ctx.line_end,
-            ctx.ast_line_start,
-            ctx.ast_line_end,
-            ctx.dataflow,
-            ctx.code_snippet,
-        )
-        .map_err(|error| {
-            anyhow!(
-                "failed to build {:?} block in {} for module {} with source lines {}-{} and AST lines {}-{}: {}",
-                ctx.block_type,
-                file.path.display(),
-                ctx.module_scope,
-                ctx.line_start,
-                ctx.line_end,
-                ctx.ast_line_start,
-                ctx.ast_line_end,
-                error
-            )
-        })?);
+        self.blocks.push(
+            Block::builder()
+                .id(BlockId(self.next_block_id))
+                .block_type(ctx.block_type)
+                .circuit_type(ctx.circuit_type)
+                .module_scope(ctx.module_scope.clone())
+                .source_file(file.path.display().to_string())
+                .line_start(ctx.line_start)
+                .line_end(ctx.line_end)
+                .ast_line_start(ctx.ast_line_start)
+                .ast_line_end(ctx.ast_line_end)
+                .dataflow(ctx.dataflow)
+                .code_snippet(ctx.code_snippet)
+                .build()
+                .map_err(|error| {
+                    anyhow!(
+                        "failed to build {:?} block in {} for module {} with source lines {}-{} and AST lines {}-{}: {}",
+                        ctx.block_type,
+                        file.path.display(),
+                        ctx.module_scope,
+                        ctx.line_start,
+                        ctx.line_end,
+                        ctx.ast_line_start,
+                        ctx.ast_line_end,
+                        error
+                    )
+                })?,
+        );
         self.next_block_id += 1;
 
         Ok(())
@@ -771,31 +775,33 @@ impl BlockCollector {
             _ => return Ok(()),
         };
 
-        self.blocks.push(Block::new_with_ast_lines(
-            BlockId(self.next_block_id),
-            port.block_type,
-            CircuitType::Combinational,
-            module_scope,
-            file.path.display().to_string(),
-            line_start,
-            line_end,
-            port.line_location.ast_line,
-            port.line_location.ast_line,
-            dataflow,
-            code_snippet,
-        )
-        .map_err(|error| {
-            anyhow!(
-                "failed to build {:?} port block in {} for module {} and signal {} with source line {} and AST line {}: {}",
-                port.block_type,
-                file.path.display(),
-                module_scope,
-                port.signal.name,
-                line_start,
-                port.line_location.ast_line,
-                error
-            )
-        })?);
+        self.blocks.push(
+            Block::builder()
+                .id(BlockId(self.next_block_id))
+                .block_type(port.block_type)
+                .circuit_type(CircuitType::Combinational)
+                .module_scope(module_scope)
+                .source_file(file.path.display().to_string())
+                .line_start(line_start)
+                .line_end(line_end)
+                .ast_line_start(port.line_location.ast_line)
+                .ast_line_end(port.line_location.ast_line)
+                .dataflow(dataflow)
+                .code_snippet(code_snippet)
+                .build()
+                .map_err(|error| {
+                    anyhow!(
+                        "failed to build {:?} port block in {} for module {} and signal {} with source line {} and AST line {}: {}",
+                        port.block_type,
+                        file.path.display(),
+                        module_scope,
+                        port.signal.name,
+                        line_start,
+                        port.line_location.ast_line,
+                        error
+                    )
+                })?,
+        );
         self.next_block_id += 1;
 
         Ok(())
@@ -1131,19 +1137,19 @@ fn merge_assign_group(mut blocks: Vec<Block>) -> Result<Block> {
         .collect::<Vec<_>>()
         .join("\n");
 
-    Block::new_with_ast_lines(
-        first.id(),
-        BlockType::Assign,
-        first.circuit_type(),
-        first.module_scope(),
-        first.source_file(),
-        line_start,
-        line_end,
-        ast_line_start,
-        ast_line_end,
-        dataflow,
-        code_snippet,
-    )
+    Block::builder()
+        .id(first.id())
+        .block_type(BlockType::Assign)
+        .circuit_type(first.circuit_type())
+        .module_scope(first.module_scope())
+        .source_file(first.source_file())
+        .line_start(line_start)
+        .line_end(line_end)
+        .ast_line_start(ast_line_start)
+        .ast_line_end(ast_line_end)
+        .dataflow(dataflow)
+        .code_snippet(code_snippet)
+        .build()
 }
 
 fn resolve_external_inputs(

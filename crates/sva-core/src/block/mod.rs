@@ -5,6 +5,7 @@ pub use dataflow::{elaborate_block_set, DataflowBlockizer};
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{bail, Result};
+use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{FuzzyMatch, SignalNotFound};
@@ -175,180 +176,73 @@ impl TryFrom<Vec<Block>> for BlockSet {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Builder)]
+#[builder(pattern = "owned", build_fn(name = "build_inner", private, validate = "Self::validate"))]
 pub struct Block {
     id: BlockId,
     block_type: BlockType,
     circuit_type: CircuitType,
+    #[builder(setter(into))]
     module_scope: String,
+    #[builder(setter(into))]
     source_file: String,
     line_start: usize,
     line_end: usize,
     ast_line_start: usize,
     ast_line_end: usize,
     #[serde(serialize_with = "serialize_signal_name_set")]
+    #[builder(setter(skip), default)]
     input_signals: HashSet<SignalNode>,
     #[serde(serialize_with = "serialize_signal_name_set")]
+    #[builder(setter(skip), default)]
     output_signals: HashSet<SignalNode>,
     dataflow: Vec<DataflowEntry>,
+    #[builder(setter(into))]
     code_snippet: String,
 }
 
+impl BlockBuilder {
+    fn validate(&self) -> Result<(), String> {
+        if let (Some(start), Some(end)) = (self.line_start, self.line_end) {
+            if start > end {
+                return Err("block line range is invalid".into());
+            }
+        }
+        if let (Some(start), Some(end)) = (self.ast_line_start, self.ast_line_end) {
+            if start > end {
+                return Err("block AST line range is invalid".into());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn build(self) -> Result<Block> {
+        let mut block = self.build_inner().map_err(|e| anyhow::anyhow!("{}", e))?;
+        block.input_signals = block
+            .dataflow
+            .iter()
+            .flat_map(|e| e.inputs.iter().cloned())
+            .collect();
+        block.output_signals = block
+            .dataflow
+            .iter()
+            .flat_map(|e| e.output.iter().cloned())
+            .collect();
+        Ok(block)
+    }
+
+    pub fn lines(mut self, start: usize, end: usize) -> Self {
+        self.line_start = Some(start);
+        self.line_end = Some(end);
+        self.ast_line_start = Some(start);
+        self.ast_line_end = Some(end);
+        self
+    }
+}
+
 impl Block {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        id: BlockId,
-        block_type: BlockType,
-        circuit_type: CircuitType,
-        module_scope: impl Into<String>,
-        source_file: impl Into<String>,
-        line_start: usize,
-        line_end: usize,
-        dataflow: Vec<DataflowEntry>,
-        code_snippet: impl Into<String>,
-    ) -> Result<Self> {
-        Self::new_with_ast_lines(
-            id,
-            block_type,
-            circuit_type,
-            module_scope,
-            source_file,
-            line_start,
-            line_end,
-            line_start,
-            line_end,
-            dataflow,
-            code_snippet,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_with_ast_lines(
-        id: BlockId,
-        block_type: BlockType,
-        circuit_type: CircuitType,
-        module_scope: impl Into<String>,
-        source_file: impl Into<String>,
-        line_start: usize,
-        line_end: usize,
-        ast_line_start: usize,
-        ast_line_end: usize,
-        dataflow: Vec<DataflowEntry>,
-        code_snippet: impl Into<String>,
-    ) -> Result<Self> {
-        let input_signals = dataflow
-            .iter()
-            .flat_map(|entry| entry.inputs.iter().cloned())
-            .collect();
-        let output_signals = dataflow
-            .iter()
-            .flat_map(|entry| entry.output.iter().cloned())
-            .collect();
-
-        Self::with_signals_and_ast_lines(
-            id,
-            block_type,
-            circuit_type,
-            module_scope,
-            source_file,
-            line_start,
-            line_end,
-            ast_line_start,
-            ast_line_end,
-            input_signals,
-            output_signals,
-            dataflow,
-            code_snippet,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_signals(
-        id: BlockId,
-        block_type: BlockType,
-        circuit_type: CircuitType,
-        module_scope: impl Into<String>,
-        source_file: impl Into<String>,
-        line_start: usize,
-        line_end: usize,
-        input_signals: HashSet<SignalNode>,
-        output_signals: HashSet<SignalNode>,
-        dataflow: Vec<DataflowEntry>,
-        code_snippet: impl Into<String>,
-    ) -> Result<Self> {
-        Self::with_signals_and_ast_lines(
-            id,
-            block_type,
-            circuit_type,
-            module_scope,
-            source_file,
-            line_start,
-            line_end,
-            line_start,
-            line_end,
-            input_signals,
-            output_signals,
-            dataflow,
-            code_snippet,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_signals_and_ast_lines(
-        id: BlockId,
-        block_type: BlockType,
-        circuit_type: CircuitType,
-        module_scope: impl Into<String>,
-        source_file: impl Into<String>,
-        line_start: usize,
-        line_end: usize,
-        ast_line_start: usize,
-        ast_line_end: usize,
-        input_signals: HashSet<SignalNode>,
-        output_signals: HashSet<SignalNode>,
-        dataflow: Vec<DataflowEntry>,
-        code_snippet: impl Into<String>,
-    ) -> Result<Self> {
-        if line_start > line_end {
-            bail!("block line range is invalid");
-        }
-
-        if ast_line_start > ast_line_end {
-            bail!("block AST line range is invalid");
-        }
-
-        let derived_input_signals: HashSet<_> = dataflow
-            .iter()
-            .flat_map(|entry| entry.inputs.iter().cloned())
-            .collect();
-        let derived_output_signals: HashSet<_> = dataflow
-            .iter()
-            .flat_map(|entry| entry.output.iter().cloned())
-            .collect();
-
-        if input_signals != derived_input_signals {
-            bail!("block input_signals do not match dataflow inputs");
-        }
-
-        if output_signals != derived_output_signals {
-            bail!("block output_signals do not match dataflow outputs");
-        }
-
-        Ok(Self {
-            id,
-            block_type,
-            circuit_type,
-            module_scope: module_scope.into(),
-            source_file: source_file.into(),
-            line_start,
-            line_end,
-            ast_line_start,
-            ast_line_end,
-            input_signals,
-            output_signals,
-            dataflow,
-            code_snippet: code_snippet.into(),
-        })
+    pub fn builder() -> BlockBuilder {
+        BlockBuilder::default()
     }
 
     pub fn id(&self) -> BlockId {
