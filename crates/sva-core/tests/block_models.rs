@@ -1,7 +1,13 @@
 use std::collections::HashSet;
 
+use serde_json::to_value;
 use sva_core::block::{Block, BlockSet, BlockType, CircuitType, DataflowEntry};
-use sva_core::types::{BlockId, SignalNode};
+use sva_core::types::{BlockId, LineRange, SignalNode};
+
+#[test]
+fn line_range_rejects_inverted_bounds() {
+    assert!(LineRange::new(9, 7).is_err());
+}
 
 #[test]
 fn block_new_derives_signal_sets_from_dataflow() {
@@ -12,6 +18,7 @@ fn block_new_derives_signal_sets_from_dataflow() {
         .module_scope("alu")
         .source_file("design.sv")
         .lines(60, 62)
+        .unwrap()
         .dataflow(vec![DataflowEntry {
             output: vec![SignalNode::named("tmp")],
             inputs: HashSet::from([SignalNode::named("a"), SignalNode::named("b")]),
@@ -35,6 +42,7 @@ fn block_set_tracks_signal_drivers_via_accessor() {
         .module_scope("alu")
         .source_file("design.sv")
         .lines(10, 10)
+        .unwrap()
         .dataflow(vec![DataflowEntry {
             output: vec![SignalNode::named("sum")],
             inputs: HashSet::from([SignalNode::named("a")]),
@@ -62,6 +70,7 @@ fn block_set_captures_multiple_drivers_without_exposing_index_mutation() {
         .module_scope("alu")
         .source_file("design.sv")
         .lines(10, 10)
+        .unwrap()
         .dataflow(vec![DataflowEntry {
             output: vec![SignalNode::named("sum")],
             inputs: HashSet::from([SignalNode::named("a")]),
@@ -76,6 +85,7 @@ fn block_set_captures_multiple_drivers_without_exposing_index_mutation() {
         .module_scope("alu")
         .source_file("design.sv")
         .lines(11, 12)
+        .unwrap()
         .dataflow(vec![DataflowEntry {
             output: vec![SignalNode::named("sum")],
             inputs: HashSet::from([SignalNode::named("b")]),
@@ -102,6 +112,7 @@ fn block_set_rejects_duplicate_block_ids() {
         .module_scope("alu")
         .source_file("design.sv")
         .lines(10, 10)
+        .unwrap()
         .dataflow(vec![DataflowEntry {
             output: vec![SignalNode::named("sum")],
             inputs: HashSet::from([SignalNode::named("a")]),
@@ -116,6 +127,7 @@ fn block_set_rejects_duplicate_block_ids() {
         .module_scope("alu")
         .source_file("design.sv")
         .lines(11, 12)
+        .unwrap()
         .dataflow(vec![DataflowEntry {
             output: vec![SignalNode::named("sum")],
             inputs: HashSet::from([SignalNode::named("b")]),
@@ -130,6 +142,35 @@ fn block_set_rejects_duplicate_block_ids() {
 }
 
 #[test]
+fn block_set_serializes_with_legacy_flat_line_fields() {
+    let block = Block::builder()
+        .id(BlockId(7))
+        .block_type(BlockType::Assign)
+        .circuit_type(CircuitType::Combinational)
+        .module_scope("alu")
+        .source_file("design.sv")
+        .lines(10, 12)
+        .unwrap()
+        .dataflow(vec![DataflowEntry {
+            output: vec![SignalNode::named("sum")],
+            inputs: HashSet::from([SignalNode::named("a")]),
+        }])
+        .code_snippet("assign sum = a;")
+        .build()
+        .unwrap();
+
+    let serialized = to_value(BlockSet::new(vec![block]).unwrap()).unwrap();
+    let first_block = &serialized["blocks"][0];
+
+    assert_eq!(first_block["line_start"], 10);
+    assert_eq!(first_block["line_end"], 12);
+    assert_eq!(first_block["ast_line_start"], 10);
+    assert_eq!(first_block["ast_line_end"], 12);
+    assert!(first_block.get("lines").is_none());
+    assert!(first_block.get("ast_lines").is_none());
+}
+
+#[test]
 fn block_set_resolves_hierarchical_alias_with_extra_intermediate_instance() {
     let canonical_signal = "TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o";
     let queried_signal = "TOP.ibex_simple_system.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o";
@@ -141,6 +182,7 @@ fn block_set_resolves_hierarchical_alias_with_extra_intermediate_instance() {
         .module_scope("ibex_if_stage")
         .source_file("ibex_if_stage.sv")
         .lines(100, 100)
+        .unwrap()
         .dataflow(vec![DataflowEntry {
             output: vec![SignalNode::named(canonical_signal)],
             inputs: HashSet::from([SignalNode::named(

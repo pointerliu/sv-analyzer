@@ -5,16 +5,14 @@ use sv_parser::{unwrap_locate, unwrap_node, RefNode};
 
 use super::{Block, BlockSet, BlockType, Blockizer, CircuitType, DataflowEntry};
 use crate::ast::{get_original_lineno_from_ast_locate, ParsedFile};
-use crate::types::{BlockId, SignalNode};
+use crate::types::{BlockId, LineRange, SignalNode};
 
 struct BlockContext {
     module_scope: String,
     block_type: BlockType,
     circuit_type: CircuitType,
-    line_start: usize,
-    line_end: usize,
-    ast_line_start: usize,
-    ast_line_end: usize,
+    lines: LineRange,
+    ast_lines: LineRange,
     code_snippet: String,
     dataflow: Vec<DataflowEntry>,
 }
@@ -434,10 +432,10 @@ fn qualify_block(block: &Block, scope: &str, next_block_id: &mut u64) -> Result<
         .circuit_type(block.circuit_type())
         .module_scope(scope)
         .source_file(block.source_file())
-        .line_start(block.line_start())
-        .line_end(block.line_end())
-        .ast_line_start(block.ast_line_start())
-        .ast_line_end(block.ast_line_end())
+        .lines(block.line_start(), block.line_end())
+        .map_err(anyhow::Error::msg)?
+        .ast_lines(block.ast_line_start(), block.ast_line_end())
+        .map_err(anyhow::Error::msg)?
         .dataflow(dataflow)
         .code_snippet(block.code_snippet())
         .build()
@@ -496,10 +494,16 @@ fn bridge_port_block(
             .circuit_type(CircuitType::Combinational)
             .module_scope(child_scope)
             .source_file(template_port_block.source_file())
-            .line_start(template_port_block.line_start())
-            .line_end(template_port_block.line_end())
-            .ast_line_start(template_port_block.ast_line_start())
-            .ast_line_end(template_port_block.ast_line_end())
+            .lines(
+                template_port_block.line_start(),
+                template_port_block.line_end(),
+            )
+            .map_err(anyhow::Error::msg)?
+            .ast_lines(
+                template_port_block.ast_line_start(),
+                template_port_block.ast_line_end(),
+            )
+            .map_err(anyhow::Error::msg)?
             .dataflow(dataflow)
             .code_snippet(template_port_block.code_snippet())
             .build()?,
@@ -593,16 +597,19 @@ impl BlockCollector {
                                 line_start.source_line,
                                 line_end.source_line,
                             );
+                            let lines =
+                                LineRange::new(line_start.source_line, line_end.source_line)
+                                    .map_err(anyhow::Error::msg)?;
+                            let ast_lines = LineRange::new(line_start.ast_line, line_end.ast_line)
+                                .map_err(anyhow::Error::msg)?;
                             self.push_block(
                                 file,
                                 BlockContext {
                                     module_scope: module_scope.to_string(),
                                     block_type: BlockType::Assign,
                                     circuit_type: CircuitType::Combinational,
-                                    line_start: line_start.source_line,
-                                    line_end: line_end.source_line,
-                                    ast_line_start: line_start.ast_line,
-                                    ast_line_end: line_end.ast_line,
+                                    lines,
+                                    ast_lines,
                                     code_snippet,
                                     dataflow: remap_dataflow_source_lines(
                                         &file.syntax_tree,
@@ -645,16 +652,19 @@ impl BlockCollector {
                                 line_start.source_line,
                                 line_end.source_line,
                             );
+                            let lines =
+                                LineRange::new(line_start.source_line, line_end.source_line)
+                                    .map_err(anyhow::Error::msg)?;
+                            let ast_lines = LineRange::new(line_start.ast_line, line_end.ast_line)
+                                .map_err(anyhow::Error::msg)?;
                             self.push_block(
                                 file,
                                 BlockContext {
                                     module_scope: module_scope.to_string(),
                                     block_type,
                                     circuit_type,
-                                    line_start: line_start.source_line,
-                                    line_end: line_end.source_line,
-                                    ast_line_start: line_start.ast_line,
-                                    ast_line_end: line_end.ast_line,
+                                    lines,
+                                    ast_lines,
                                     code_snippet,
                                     dataflow: remap_dataflow_source_lines(
                                         &file.syntax_tree,
@@ -681,10 +691,10 @@ impl BlockCollector {
                 .circuit_type(ctx.circuit_type)
                 .module_scope(ctx.module_scope.clone())
                 .source_file(file.path.display().to_string())
-                .line_start(ctx.line_start)
-                .line_end(ctx.line_end)
-                .ast_line_start(ctx.ast_line_start)
-                .ast_line_end(ctx.ast_line_end)
+                .lines(ctx.lines.start(), ctx.lines.end())
+                .map_err(anyhow::Error::msg)?
+                .ast_lines(ctx.ast_lines.start(), ctx.ast_lines.end())
+                .map_err(anyhow::Error::msg)?
                 .dataflow(ctx.dataflow)
                 .code_snippet(ctx.code_snippet)
                 .build()
@@ -694,10 +704,10 @@ impl BlockCollector {
                         ctx.block_type,
                         file.path.display(),
                         ctx.module_scope,
-                        ctx.line_start,
-                        ctx.line_end,
-                        ctx.ast_line_start,
-                        ctx.ast_line_end,
+                        ctx.lines.start(),
+                        ctx.lines.end(),
+                        ctx.ast_lines.start(),
+                        ctx.ast_lines.end(),
                         error
                     )
                 })?,
@@ -760,8 +770,10 @@ impl BlockCollector {
         module_scope: &str,
         port: PortBlockData,
     ) -> Result<()> {
-        let line_start = port.line_location.source_line;
-        let line_end = line_start;
+        let lines = LineRange::single(port.line_location.source_line);
+        let ast_lines = LineRange::single(port.line_location.ast_line);
+        let line_start = lines.start();
+        let line_end = lines.end();
         let code_snippet = snippet_from_source(&file.source_text, line_start, line_end);
         let dataflow = match port.block_type {
             BlockType::ModInput => vec![DataflowEntry {
@@ -782,10 +794,10 @@ impl BlockCollector {
                 .circuit_type(CircuitType::Combinational)
                 .module_scope(module_scope)
                 .source_file(file.path.display().to_string())
-                .line_start(line_start)
-                .line_end(line_end)
-                .ast_line_start(port.line_location.ast_line)
-                .ast_line_end(port.line_location.ast_line)
+                .lines(lines.start(), lines.end())
+                .map_err(anyhow::Error::msg)?
+                .ast_lines(ast_lines.start(), ast_lines.end())
+                .map_err(anyhow::Error::msg)?
                 .dataflow(dataflow)
                 .code_snippet(code_snippet)
                 .build()
@@ -1143,10 +1155,10 @@ fn merge_assign_group(mut blocks: Vec<Block>) -> Result<Block> {
         .circuit_type(first.circuit_type())
         .module_scope(first.module_scope())
         .source_file(first.source_file())
-        .line_start(line_start)
-        .line_end(line_end)
-        .ast_line_start(ast_line_start)
-        .ast_line_end(ast_line_end)
+        .lines(line_start, line_end)
+        .map_err(anyhow::Error::msg)?
+        .ast_lines(ast_line_start, ast_line_end)
+        .map_err(anyhow::Error::msg)?
         .dataflow(dataflow)
         .code_snippet(code_snippet)
         .build()
@@ -1516,7 +1528,7 @@ fn line_location_from_node(
     source_text: &str,
     node: RefNode,
 ) -> Option<LineLocation> {
-    unwrap_locate!(node).and_then(|loc| line_location_from_locate(syntax_tree, source_text, &loc))
+    unwrap_locate!(node).and_then(|loc| line_location_from_locate(syntax_tree, source_text, loc))
 }
 
 fn line_location_from_locate(
@@ -1525,7 +1537,7 @@ fn line_location_from_locate(
     loc: &sv_parser::Locate,
 ) -> Option<LineLocation> {
     Some(LineLocation {
-        source_line: get_original_lineno_from_ast_locate(syntax_tree, loc.clone(), source_text)?,
+        source_line: get_original_lineno_from_ast_locate(syntax_tree, *loc, source_text)?,
         ast_line: usize::try_from(loc.line).ok()?,
     })
 }

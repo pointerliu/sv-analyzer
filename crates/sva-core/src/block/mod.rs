@@ -6,10 +6,13 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{bail, Result};
 use derive_builder::Builder;
+use serde::ser::{SerializeStruct, Serializer};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{FuzzyMatch, SignalNotFound};
-use crate::types::{serialize_signal_driver_map, serialize_signal_name_set, BlockId, SignalNode};
+use crate::types::{
+    serialize_signal_driver_map, serialize_signal_name_set, BlockId, LineRange, SignalNode,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum BlockType {
@@ -176,8 +179,8 @@ impl TryFrom<Vec<Block>> for BlockSet {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Builder)]
-#[builder(pattern = "owned", build_fn(name = "build_inner", private, validate = "Self::validate"))]
+#[derive(Debug, Clone, PartialEq, Eq, Builder)]
+#[builder(pattern = "owned", build_fn(name = "build_inner", private))]
 pub struct Block {
     id: BlockId,
     block_type: BlockType,
@@ -186,14 +189,12 @@ pub struct Block {
     module_scope: String,
     #[builder(setter(into))]
     source_file: String,
-    line_start: usize,
-    line_end: usize,
-    ast_line_start: usize,
-    ast_line_end: usize,
-    #[serde(serialize_with = "serialize_signal_name_set")]
+    #[builder(setter(custom))]
+    lines: LineRange,
+    #[builder(setter(custom))]
+    ast_lines: LineRange,
     #[builder(setter(skip), default)]
     input_signals: HashSet<SignalNode>,
-    #[serde(serialize_with = "serialize_signal_name_set")]
     #[builder(setter(skip), default)]
     output_signals: HashSet<SignalNode>,
     dataflow: Vec<DataflowEntry>,
@@ -202,20 +203,6 @@ pub struct Block {
 }
 
 impl BlockBuilder {
-    fn validate(&self) -> Result<(), String> {
-        if let (Some(start), Some(end)) = (self.line_start, self.line_end) {
-            if start > end {
-                return Err("block line range is invalid".into());
-            }
-        }
-        if let (Some(start), Some(end)) = (self.ast_line_start, self.ast_line_end) {
-            if start > end {
-                return Err("block AST line range is invalid".into());
-            }
-        }
-        Ok(())
-    }
-
     pub fn build(self) -> Result<Block> {
         let mut block = self.build_inner().map_err(|e| anyhow::anyhow!("{}", e))?;
         block.input_signals = block
@@ -231,12 +218,18 @@ impl BlockBuilder {
         Ok(block)
     }
 
-    pub fn lines(mut self, start: usize, end: usize) -> Self {
-        self.line_start = Some(start);
-        self.line_end = Some(end);
-        self.ast_line_start = Some(start);
-        self.ast_line_end = Some(end);
-        self
+    pub fn lines(mut self, start: usize, end: usize) -> Result<Self, String> {
+        let lines = LineRange::new(start, end)?;
+        self.lines = Some(lines);
+        if self.ast_lines.is_none() {
+            self.ast_lines = Some(lines);
+        }
+        Ok(self)
+    }
+
+    pub fn ast_lines(mut self, start: usize, end: usize) -> Result<Self, String> {
+        self.ast_lines = Some(LineRange::new(start, end)?);
+        Ok(self)
     }
 }
 
@@ -266,19 +259,27 @@ impl Block {
     }
 
     pub fn line_start(&self) -> usize {
-        self.line_start
+        self.lines.start()
     }
 
     pub fn line_end(&self) -> usize {
-        self.line_end
+        self.lines.end()
     }
 
     pub fn ast_line_start(&self) -> usize {
-        self.ast_line_start
+        self.ast_lines.start()
     }
 
     pub fn ast_line_end(&self) -> usize {
-        self.ast_line_end
+        self.ast_lines.end()
+    }
+
+    pub fn lines(&self) -> LineRange {
+        self.lines
+    }
+
+    pub fn ast_lines(&self) -> LineRange {
+        self.ast_lines
     }
 
     pub fn input_signals(&self) -> &HashSet<SignalNode> {
@@ -295,6 +296,34 @@ impl Block {
 
     pub fn code_snippet(&self) -> &str {
         &self.code_snippet
+    }
+}
+
+impl Serialize for Block {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        #[derive(Serialize)]
+        struct SignalNames<'a>(
+            #[serde(serialize_with = "serialize_signal_name_set")] &'a HashSet<SignalNode>,
+        );
+
+        let mut state = serializer.serialize_struct("Block", 13)?;
+        state.serialize_field("id", &self.id)?;
+        state.serialize_field("block_type", &self.block_type)?;
+        state.serialize_field("circuit_type", &self.circuit_type)?;
+        state.serialize_field("module_scope", &self.module_scope)?;
+        state.serialize_field("source_file", &self.source_file)?;
+        state.serialize_field("line_start", &self.line_start())?;
+        state.serialize_field("line_end", &self.line_end())?;
+        state.serialize_field("ast_line_start", &self.ast_line_start())?;
+        state.serialize_field("ast_line_end", &self.ast_line_end())?;
+        state.serialize_field("input_signals", &SignalNames(&self.input_signals))?;
+        state.serialize_field("output_signals", &SignalNames(&self.output_signals))?;
+        state.serialize_field("dataflow", &self.dataflow)?;
+        state.serialize_field("code_snippet", &self.code_snippet)?;
+        state.end()
     }
 }
 

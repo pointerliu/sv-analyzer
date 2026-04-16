@@ -37,6 +37,7 @@ fn static_slice_returns_timeless_graph_for_transitive_dependencies() {
             .module_scope("demo")
             .source_file("design.sv")
             .lines(10, 10)
+            .unwrap()
             .dataflow(vec![entry(&["tmp"], &["a", "b"])])
             .code_snippet("assign tmp = a & b;")
             .build()
@@ -48,6 +49,7 @@ fn static_slice_returns_timeless_graph_for_transitive_dependencies() {
             .module_scope("demo")
             .source_file("design.sv")
             .lines(12, 14)
+            .unwrap()
             .dataflow(vec![entry(&["result"], &["tmp", "c"])])
             .code_snippet("always_ff @(posedge clk) result <= tmp ^ c;")
             .build()
@@ -59,6 +61,7 @@ fn static_slice_returns_timeless_graph_for_transitive_dependencies() {
             .module_scope("demo")
             .source_file("design.sv")
             .lines(20, 20)
+            .unwrap()
             .dataflow(vec![entry(&["sink_result"], &["result"])])
             .code_snippet("output result;")
             .build()
@@ -133,6 +136,7 @@ fn static_slicer_implements_shared_slicer_trait_with_none_time_nodes() {
         .module_scope("demo")
         .source_file("design.sv")
         .lines(10, 10)
+        .unwrap()
         .dataflow(vec![entry(&["result"], &["a"])])
         .code_snippet("assign result = a;")
         .build()
@@ -171,6 +175,7 @@ fn static_slice_resolves_signal_with_omitted_intermediate_instance() {
         .module_scope("demo")
         .source_file("design.sv")
         .lines(10, 10)
+        .unwrap()
         .dataflow(vec![entry(
             &[canonical_signal],
             &["TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_if_o"],
@@ -201,6 +206,7 @@ fn static_slice_keeps_literals_as_terminal_nodes() {
         .module_scope("demo")
         .source_file("design.sv")
         .lines(53, 55)
+        .unwrap()
         .dataflow(vec![DataflowEntry {
             output: vec![SignalNode::named("result")],
             inputs: HashSet::from([SignalNode::named("rst_n"), SignalNode::literal("8'h0")]),

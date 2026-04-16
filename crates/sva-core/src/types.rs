@@ -9,6 +9,36 @@ pub struct BlockId(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Timestamp(pub i64);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LineRange {
+    start: usize,
+    end: usize,
+}
+
+impl LineRange {
+    pub fn new(start: usize, end: usize) -> Result<Self, String> {
+        if start > end {
+            return Err(format!("invalid line range: start ({start}) > end ({end})"));
+        }
+        Ok(Self { start, end })
+    }
+
+    pub fn single(line: usize) -> Self {
+        Self {
+            start: line,
+            end: line,
+        }
+    }
+
+    pub fn start(&self) -> usize {
+        self.start
+    }
+
+    pub fn end(&self) -> usize {
+        self.end
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignalLocate {
     pub offset: usize,

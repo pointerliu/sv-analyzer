@@ -19,6 +19,7 @@ fn blues_backtracks_sequential_state_until_coverage_hit_and_respects_min_time() 
             .module_scope("demo")
             .source_file("design.sv")
             .lines(10, 10)
+            .unwrap()
             .dataflow(vec![entry("tmp", &["a", "b"])])
             .code_snippet("assign tmp = a & b;")
             .build()
@@ -30,6 +31,7 @@ fn blues_backtracks_sequential_state_until_coverage_hit_and_respects_min_time() 
             .module_scope("demo")
             .source_file("design.sv")
             .lines(20, 20)
+            .unwrap()
             .dataflow(vec![entry("result", &["tmp"])])
             .code_snippet("always_ff @(posedge clk) result <= tmp;")
             .build()
@@ -114,6 +116,7 @@ fn blues_keeps_dependencies_from_distinct_outputs_of_same_block() {
             .module_scope("demo")
             .source_file("design.sv")
             .lines(10, 10)
+            .unwrap()
             .dataflow(vec![entry("left_src", &["a"])])
             .code_snippet("assign left_src = a;")
             .build()
@@ -125,6 +128,7 @@ fn blues_keeps_dependencies_from_distinct_outputs_of_same_block() {
             .module_scope("demo")
             .source_file("design.sv")
             .lines(11, 11)
+            .unwrap()
             .dataflow(vec![entry("right_src", &["b"])])
             .code_snippet("assign right_src = b;")
             .build()
@@ -136,7 +140,11 @@ fn blues_keeps_dependencies_from_distinct_outputs_of_same_block() {
             .module_scope("demo")
             .source_file("design.sv")
             .lines(12, 13)
-            .dataflow(vec![entry("left", &["left_src"]), entry("right", &["right_src"])])
+            .unwrap()
+            .dataflow(vec![
+                entry("left", &["left_src"]),
+                entry("right", &["right_src"]),
+            ])
             .code_snippet("assign left = left_src; assign right = right_src;")
             .build()
             .unwrap(),
@@ -147,6 +155,7 @@ fn blues_keeps_dependencies_from_distinct_outputs_of_same_block() {
             .module_scope("demo")
             .source_file("design.sv")
             .lines(14, 14)
+            .unwrap()
             .dataflow(vec![entry("result", &["left", "right"])])
             .code_snippet("assign result = left ^ right;")
             .build()
@@ -219,6 +228,7 @@ fn blues_keeps_literals_as_terminal_nodes() {
         .module_scope("demo")
         .source_file("design.sv")
         .lines(53, 55)
+        .unwrap()
         .dataflow(vec![DataflowEntry {
             output: vec![SignalNode::named("result")],
             inputs: HashSet::from([SignalNode::named("rst_n"), SignalNode::literal("8'h0")]),
@@ -281,6 +291,7 @@ fn blues_resolves_signal_with_omitted_intermediate_instance() {
         .module_scope("ibex_if_stage")
         .source_file("ibex_if_stage.sv")
         .lines(501, 501)
+        .unwrap()
         .dataflow(vec![DataflowEntry {
             output: vec![SignalNode::named(canonical_signal)],
             inputs: HashSet::from([SignalNode::named(
