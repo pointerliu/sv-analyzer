@@ -3,7 +3,8 @@ use crate::block::Blockizer;
 use crate::block::{elaborate_block_set, BlockSet, DataflowBlockizer};
 use crate::coverage::CoverageTracker;
 use crate::coverage::{
-    assignment_statement_coverage_report, StatementCoverageReport, VcdCoverageTracker,
+    assignment_statement_coverage_report, ElaboratedCoverageTracker, StatementCoverageReport,
+    VcdCoverageTracker, VerilatorElaborationIndex,
 };
 use crate::error::{FuzzyMatch, SignalNotFound};
 use crate::slicer::SliceRequest;
@@ -32,6 +33,8 @@ pub struct DynamicSliceRequest {
     pub parse_options: ParseOptions,
     pub signal: String,
     pub vcd: PathBuf,
+    pub tree_json: Option<PathBuf>,
+    pub tree_meta_json: Option<PathBuf>,
     pub time: i64,
     pub min_time: i64,
     pub clock: Option<String>,
@@ -78,13 +81,25 @@ pub fn slice_dynamic(req: DynamicSliceRequest) -> Result<crate::types::StableSli
     let block_set =
         elaborate_block_set(&parsed_files, &DataflowBlockizer.blockize(&parsed_files)?)?;
 
-    let coverage: Arc<dyn CoverageTracker + Send + Sync> = match (&req.clock, req.clk_step) {
+    let base_coverage: Arc<dyn CoverageTracker + Send + Sync> = match (&req.clock, req.clk_step) {
         (Some(clock_name), Some(clk_step)) => Arc::new(VcdCoverageTracker::open_with_clock(
             &req.vcd, clock_name, clk_step,
         )?),
         (None, None) => Arc::new(VcdCoverageTracker::open(&req.vcd)?),
         _ => anyhow::bail!("both --clock and --clk-step must be provided together"),
     };
+    let coverage: Arc<dyn CoverageTracker + Send + Sync> =
+        if let Some(tree_json) = req.tree_json.as_ref() {
+            Arc::new(ElaboratedCoverageTracker::new(
+                base_coverage,
+                VerilatorElaborationIndex::from_tree_json_file_with_meta(
+                    tree_json,
+                    req.tree_meta_json.as_ref(),
+                )?,
+            ))
+        } else {
+            base_coverage
+        };
 
     if !coverage.is_posedge_time(req.time) {
         anyhow::bail!(

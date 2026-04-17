@@ -11,8 +11,8 @@ pub mod services;
 pub use block::DataflowBlockizer;
 pub use block::{elaborate_block_set, BlockSet, BlockType, CircuitType};
 pub use coverage::{
-    assignment_statement_coverage_report, StatementCoverageEntry, StatementCoverageReport,
-    VcdCoverageTracker,
+    assignment_statement_coverage_report, ElaboratedCoverageTracker, StatementCoverageEntry,
+    StatementCoverageReport, VcdCoverageTracker, VerilatorElaborationIndex,
 };
 pub use error::{FuzzyMatch, SignalNotFound};
 pub use slicer::{BluesSlicer, SliceGraph, SliceRequest, Slicer, StaticSlicer};

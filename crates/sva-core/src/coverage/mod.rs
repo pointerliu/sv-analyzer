@@ -19,8 +19,10 @@ pub trait CoverageTracker {
     }
 }
 
+pub mod elaboration;
 pub mod statements;
 pub mod vcd;
+pub use elaboration::{ElaboratedCoverageTracker, VerilatorElaborationIndex};
 pub use statements::{
     assignment_statement_coverage_report, StatementCoverageEntry, StatementCoverageReport,
 };

@@ -16,6 +16,13 @@ struct SliceAccum<'a> {
     block_ids: &'a mut HashSet<BlockId>,
 }
 
+struct UpstreamEdgeParams<'a> {
+    signal: &'a SignalNode,
+    source_time: Timestamp,
+    sink_block_id: BlockId,
+    sink_time: Timestamp,
+}
+
 pub struct BluesSlicer {
     block_set: BlockSet,
     blocks_by_id: HashMap<BlockId, Block>,
@@ -105,10 +112,12 @@ impl BluesSlicer {
                                     edges: &mut edge_keys,
                                     block_ids: &mut block_ids,
                                 },
-                                &input,
-                                time,
-                                driver.id(),
-                                time,
+                                UpstreamEdgeParams {
+                                    signal: &input,
+                                    source_time: time,
+                                    sink_block_id: driver.id(),
+                                    sink_time: time,
+                                },
                             );
 
                             if queued.insert((input.clone(), time.0)) {
@@ -166,10 +175,12 @@ impl BluesSlicer {
                                     edges: &mut edge_keys,
                                     block_ids: &mut block_ids,
                                 },
-                                &input,
-                                previous_time,
-                                driver.id(),
-                                time,
+                                UpstreamEdgeParams {
+                                    signal: &input,
+                                    source_time: previous_time,
+                                    sink_block_id: driver.id(),
+                                    sink_time: time,
+                                },
                             );
 
                             if queued.insert((input.clone(), previous_time.0)) {
@@ -227,13 +238,10 @@ fn add_upstream_edges(
     blocks_by_id: &HashMap<BlockId, Block>,
     coverage: &dyn CoverageTracker,
     accum: &mut SliceAccum<'_>,
-    signal: &SignalNode,
-    source_time: Timestamp,
-    sink_block_id: BlockId,
-    sink_time: Timestamp,
+    params: UpstreamEdgeParams<'_>,
 ) {
-    for upstream_id in block_set.drivers_for(signal) {
-        if *upstream_id == sink_block_id {
+    for upstream_id in block_set.drivers_for(params.signal) {
+        if *upstream_id == params.sink_block_id {
             continue;
         }
         let Some(upstream) = blocks_by_id.get(upstream_id) else {
@@ -245,23 +253,26 @@ fn add_upstream_edges(
 
         let upstream_node = TimedSliceNode::Block {
             block_id: *upstream_id,
-            time: Some(source_time),
+            time: Some(params.source_time),
         };
         accum.nodes.insert(upstream_node.clone());
         accum.block_ids.insert(*upstream_id);
         accum.edges.insert((
             upstream_node,
             TimedSliceNode::Block {
-                block_id: sink_block_id,
-                time: Some(sink_time),
+                block_id: params.sink_block_id,
+                time: Some(params.sink_time),
             },
-            Some(signal.clone()),
+            Some(params.signal.clone()),
         ));
     }
 }
 
 fn is_elaborated(coverage: &dyn CoverageTracker, block: &Block) -> bool {
-    if matches!(block.block_type(), BlockType::ModInput | BlockType::ModOutput) {
+    if matches!(
+        block.block_type(),
+        BlockType::ModInput | BlockType::ModOutput
+    ) {
         return true;
     }
     coverage.is_block_elaborated(block.source_file(), block.line_start(), block.line_end())

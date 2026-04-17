@@ -118,6 +118,8 @@ fn handle_slice(params: Option<Value>) -> JsonRpcResponse {
             parse_options: parse_options(params.project_path, params.include_paths),
             signal: params.signal,
             vcd: std::path::PathBuf::from(vcd.clone()),
+            tree_json: params.tree_json.map(std::path::PathBuf::from),
+            tree_meta_json: params.tree_meta_json.map(std::path::PathBuf::from),
             time,
             min_time,
             clock: params.clock,

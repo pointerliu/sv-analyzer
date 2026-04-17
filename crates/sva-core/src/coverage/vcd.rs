@@ -214,9 +214,7 @@ impl CoverageTracker for VcdCoverageTracker {
             return false;
         };
         let lower = lines.partition_point(|line| *line < line_start);
-        lines
-            .get(lower)
-            .is_some_and(|line| *line <= line_end)
+        lines.get(lower).is_some_and(|line| *line <= line_end)
     }
 }
 

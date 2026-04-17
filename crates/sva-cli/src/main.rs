@@ -172,6 +172,16 @@ struct SliceArgs {
     signal: String,
     #[arg(long)]
     vcd: Option<PathBuf>,
+    #[arg(
+        long = "tree-json",
+        help = "Native Verilator tree JSON used to prune non-elaborated dynamic slice blocks"
+    )]
+    tree_json: Option<PathBuf>,
+    #[arg(
+        long = "tree-meta-json",
+        help = "Native Verilator tree metadata JSON used to resolve loc file IDs"
+    )]
+    tree_meta_json: Option<PathBuf>,
     #[arg(long)]
     time: Option<i64>,
     #[arg(long = "min-time")]
@@ -300,6 +310,8 @@ fn run_blues(args: SliceArgs) -> Result<()> {
         parse_options,
         signal: args.signal,
         vcd,
+        tree_json: args.tree_json,
+        tree_meta_json: args.tree_meta_json,
         time,
         min_time,
         clock: args.clock,

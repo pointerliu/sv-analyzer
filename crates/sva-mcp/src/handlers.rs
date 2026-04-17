@@ -48,6 +48,18 @@ pub struct DynamicSliceRequest {
     pub signal: String,
     #[schemars(description = "path to VCD waveform file")]
     pub vcd: String,
+    #[serde(default)]
+    #[schemars(
+        description = "native Verilator tree JSON used to prune non-elaborated dynamic slice blocks",
+        default
+    )]
+    pub tree_json: Option<String>,
+    #[serde(default)]
+    #[schemars(
+        description = "native Verilator tree metadata JSON used to resolve loc file IDs",
+        default
+    )]
+    pub tree_meta_json: Option<String>,
     #[schemars(description = "time to slice at")]
     pub time: i64,
     #[schemars(description = "minimum time boundary")]
@@ -155,6 +167,8 @@ impl SvaMcpServer {
             parse_options,
             signal: req.signal,
             vcd: std::path::PathBuf::from(req.vcd),
+            tree_json: req.tree_json.map(std::path::PathBuf::from),
+            tree_meta_json: req.tree_meta_json.map(std::path::PathBuf::from),
             time: req.time,
             min_time: req.min_time,
             clock: req.clock,

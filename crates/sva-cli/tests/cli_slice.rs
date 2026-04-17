@@ -15,6 +15,31 @@ fn workspace_root() -> PathBuf {
 }
 
 #[test]
+fn cli_slice_help_exposes_tree_json_option() {
+    let output = Command::new(main_bin())
+        .args(["slice", "--help"])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("--tree-json"),
+        "slice help should expose native Verilator tree JSON input: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("--tree-meta-json"),
+        "slice help should expose native Verilator tree metadata JSON input: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+#[test]
 fn cli_slice_outputs_graph_json_with_blues_by_default() {
     let fixture = write_slice_fixture();
 

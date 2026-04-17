@@ -21,6 +21,10 @@ pub struct SliceParams {
     #[serde(default)]
     pub vcd: Option<String>,
     #[serde(default)]
+    pub tree_json: Option<String>,
+    #[serde(default)]
+    pub tree_meta_json: Option<String>,
+    #[serde(default)]
     pub time: Option<i64>,
     #[serde(default)]
     pub min_time: Option<i64>,
