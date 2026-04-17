@@ -15,6 +15,7 @@ pub struct VcdCoverageTracker {
     annotation_query_times: Vec<i64>,
     annotation_sample_times: Vec<i64>,
     traces_by_line: HashMap<(String, usize), Vec<CoverageTrace>>,
+    elaborated_lines_by_file: HashMap<String, Vec<usize>>,
     clock_period: Option<i64>,
     #[allow(dead_code)]
     clock_signal_ref: Option<SignalRef>,
@@ -105,6 +106,7 @@ impl VcdCoverageTracker {
             };
 
         let mut traces_by_line = HashMap::new();
+        let mut elaborated_lines_by_file: HashMap<String, Vec<usize>> = HashMap::new();
         for descriptor in descriptors {
             let signal = waveform.get_signal(descriptor.signal_ref).ok_or_else(|| {
                 anyhow!(
@@ -115,16 +117,27 @@ impl VcdCoverageTracker {
             })?;
             let samples = extract_samples(signal, &raw_times)?;
 
+            elaborated_lines_by_file
+                .entry(descriptor.file.clone())
+                .or_default()
+                .push(descriptor.line);
+
             traces_by_line
                 .entry((descriptor.file, descriptor.line))
                 .or_insert_with(Vec::new)
                 .push(CoverageTrace { samples });
         }
 
+        for lines in elaborated_lines_by_file.values_mut() {
+            lines.sort_unstable();
+            lines.dedup();
+        }
+
         Ok(Self {
             annotation_query_times,
             annotation_sample_times,
             traces_by_line,
+            elaborated_lines_by_file,
             clock_period,
             clock_signal_ref,
             rising_edges,
@@ -193,6 +206,17 @@ impl CoverageTracker for VcdCoverageTracker {
 
     fn is_posedge_time(&self, time: i64) -> bool {
         self.rising_edges.binary_search(&time).is_ok()
+    }
+
+    fn is_block_elaborated(&self, file: &str, line_start: usize, line_end: usize) -> bool {
+        let normalized = normalize_file_key(file);
+        let Some(lines) = self.elaborated_lines_by_file.get(&normalized) else {
+            return false;
+        };
+        let lower = lines.partition_point(|line| *line < line_start);
+        lines
+            .get(lower)
+            .is_some_and(|line| *line <= line_end)
     }
 }
 

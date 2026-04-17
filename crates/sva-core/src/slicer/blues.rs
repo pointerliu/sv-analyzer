@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use crate::block::{Block, BlockSet, CircuitType};
+use crate::block::{Block, BlockSet, BlockType, CircuitType};
 use crate::coverage::CoverageTracker;
 use crate::slicer::{BlockEdgeJson, BlockJson, InstructionExecutionPath, SliceRequest, Slicer};
 use crate::types::{BlockId, SignalNode, TimedSliceNode, Timestamp};
@@ -62,6 +62,10 @@ impl BluesSlicer {
                     continue;
                 };
 
+                if !is_elaborated(self.coverage.as_ref(), driver) {
+                    continue;
+                }
+
                 let driver_node = TimedSliceNode::Block {
                     block_id: driver.id(),
                     time: Some(time),
@@ -95,6 +99,7 @@ impl BluesSlicer {
                             add_upstream_edges(
                                 &self.block_set,
                                 &self.blocks_by_id,
+                                self.coverage.as_ref(),
                                 &mut SliceAccum {
                                     nodes: &mut nodes,
                                     edges: &mut edge_keys,
@@ -155,6 +160,7 @@ impl BluesSlicer {
                             add_upstream_edges(
                                 &self.block_set,
                                 &self.blocks_by_id,
+                                self.coverage.as_ref(),
                                 &mut SliceAccum {
                                     nodes: &mut nodes,
                                     edges: &mut edge_keys,
@@ -219,6 +225,7 @@ impl Slicer for BluesSlicer {
 fn add_upstream_edges(
     block_set: &BlockSet,
     blocks_by_id: &HashMap<BlockId, Block>,
+    coverage: &dyn CoverageTracker,
     accum: &mut SliceAccum<'_>,
     signal: &SignalNode,
     source_time: Timestamp,
@@ -226,7 +233,13 @@ fn add_upstream_edges(
     sink_time: Timestamp,
 ) {
     for upstream_id in block_set.drivers_for(signal) {
-        if *upstream_id == sink_block_id || !blocks_by_id.contains_key(upstream_id) {
+        if *upstream_id == sink_block_id {
+            continue;
+        }
+        let Some(upstream) = blocks_by_id.get(upstream_id) else {
+            continue;
+        };
+        if !is_elaborated(coverage, upstream) {
             continue;
         }
 
@@ -245,6 +258,13 @@ fn add_upstream_edges(
             Some(signal.clone()),
         ));
     }
+}
+
+fn is_elaborated(coverage: &dyn CoverageTracker, block: &Block) -> bool {
+    if matches!(block.block_type(), BlockType::ModInput | BlockType::ModOutput) {
+        return true;
+    }
+    coverage.is_block_elaborated(block.source_file(), block.line_start(), block.line_end())
 }
 
 fn inputs_for_output(block: &Block, output: &SignalNode) -> Vec<SignalNode> {

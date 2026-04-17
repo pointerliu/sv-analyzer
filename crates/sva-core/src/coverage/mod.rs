@@ -12,6 +12,11 @@ pub trait CoverageTracker {
     fn clock_period(&self) -> Option<i64>;
 
     fn is_posedge_time(&self, time: i64) -> bool;
+
+    fn is_block_elaborated(&self, file: &str, line_start: usize, line_end: usize) -> bool {
+        let _ = (file, line_start, line_end);
+        true
+    }
 }
 
 pub mod statements;
