@@ -141,28 +141,36 @@ fn cli_blockize_processes_multi_submodule_demo_modules() {
 
     assert!(
         json["blocks"].as_array().unwrap().iter().any(|block| {
-            block["module_scope"].as_str().map_or(false, |s| s.ends_with("u_sub1"))
+            block["module_scope"]
+                .as_str()
+                .is_some_and(|s| s.ends_with("u_sub1"))
                 && block["block_type"] == "Assign"
         }),
         "expected assign logic in submodule1: {json:?}"
     );
     assert!(
         json["blocks"].as_array().unwrap().iter().any(|block| {
-            block["module_scope"].as_str().map_or(false, |s| s.ends_with("u_sub1"))
+            block["module_scope"]
+                .as_str()
+                .is_some_and(|s| s.ends_with("u_sub1"))
                 && block["block_type"] == "Always"
         }),
         "expected always/always_comb logic in submodule1: {json:?}"
     );
     assert!(
         json["blocks"].as_array().unwrap().iter().any(|block| {
-            block["module_scope"].as_str().map_or(false, |s| s.ends_with("u_sub2"))
+            block["module_scope"]
+                .as_str()
+                .is_some_and(|s| s.ends_with("u_sub2"))
                 && block["block_type"] == "Always"
         }),
         "expected sequential always logic in submodule2: {json:?}"
     );
     assert!(
         json["blocks"].as_array().unwrap().iter().any(|block| {
-            block["module_scope"].as_str().map_or(false, |s| s.ends_with("u_sub2"))
+            block["module_scope"]
+                .as_str()
+                .is_some_and(|s| s.ends_with("u_sub2"))
                 && block["block_type"] == "Assign"
         }),
         "expected assign logic in submodule2: {json:?}"

@@ -34,6 +34,17 @@ struct AssignmentStatement {
     triggers: Vec<(String, EdgeKind)>,
 }
 
+type BlockLocation = (String, usize, usize);
+type BlockTriggers = Vec<(String, EdgeKind)>;
+
+struct EvalContext<'a> {
+    file: &'a str,
+    wave: &'a WellenReader,
+    time: Timestamp,
+    constants: &'a HashMap<String, String>,
+    resolver: &'a SignalResolver,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Guard {
     Predicate(String),
@@ -230,6 +241,14 @@ fn evaluate_guards(
     constants: &HashMap<String, String>,
     resolver: &SignalResolver,
 ) -> Result<bool> {
+    let ctx = EvalContext {
+        file,
+        wave,
+        time,
+        constants,
+        resolver,
+    };
+
     for guard in guards {
         let matches = match guard {
             Guard::Predicate(expr) => eval_predicate(expr, file, wave, time, constants, resolver)?,
@@ -237,16 +256,12 @@ fn evaluate_guards(
                 !eval_predicate(expr, file, wave, time, constants, resolver)?
             }
             Guard::CaseMatch { selector, items } => {
-                let Some(selector_bits) =
-                    value_bits(selector, file, wave, time, constants, resolver)?
-                else {
+                let Some(selector_bits) = value_bits(selector, &ctx)? else {
                     return Ok(false);
                 };
                 let mut matched = false;
                 for item in items {
-                    if let Some(item_bits) =
-                        value_bits(item, file, wave, time, constants, resolver)?
-                    {
+                    if let Some(item_bits) = value_bits(item, &ctx)? {
                         if bits_equal(&selector_bits, &item_bits) {
                             matched = true;
                             break;
@@ -256,16 +271,12 @@ fn evaluate_guards(
                 matched
             }
             Guard::CaseDefault { selector, items } => {
-                let Some(selector_bits) =
-                    value_bits(selector, file, wave, time, constants, resolver)?
-                else {
+                let Some(selector_bits) = value_bits(selector, &ctx)? else {
                     return Ok(false);
                 };
                 let mut matched = false;
                 for item in items {
-                    if let Some(item_bits) =
-                        value_bits(item, file, wave, time, constants, resolver)?
-                    {
+                    if let Some(item_bits) = value_bits(item, &ctx)? {
                         if bits_equal(&selector_bits, &item_bits) {
                             matched = true;
                             break;
@@ -293,25 +304,32 @@ fn eval_predicate(
     resolver: &SignalResolver,
 ) -> Result<bool> {
     let expr = trim_wrapping_parens(expr.trim());
+    let ctx = EvalContext {
+        file,
+        wave,
+        time,
+        constants,
+        resolver,
+    };
 
     if let Some(rest) = expr.strip_prefix('!') {
         return Ok(!eval_predicate(
             rest.trim(),
-            file,
-            wave,
-            time,
-            constants,
-            resolver,
+            ctx.file,
+            ctx.wave,
+            ctx.time,
+            ctx.constants,
+            ctx.resolver,
         )?);
     }
     if let Some((left, right)) = split_once_operator(expr, "==") {
-        return compare_values(left, right, file, wave, time, constants, resolver, true);
+        return compare_values(left, right, &ctx, true);
     }
     if let Some((left, right)) = split_once_operator(expr, "!=") {
-        return compare_values(left, right, file, wave, time, constants, resolver, false);
+        return compare_values(left, right, &ctx, false);
     }
 
-    let Some(bits) = value_bits(expr, file, wave, time, constants, resolver)? else {
+    let Some(bits) = value_bits(expr, &ctx)? else {
         return Ok(false);
     };
     Ok(bits.chars().any(|bit| bit == '1'))
@@ -320,40 +338,30 @@ fn eval_predicate(
 fn compare_values(
     left: &str,
     right: &str,
-    file: &str,
-    wave: &WellenReader,
-    time: Timestamp,
-    constants: &HashMap<String, String>,
-    resolver: &SignalResolver,
+    ctx: &EvalContext<'_>,
     expect_equal: bool,
 ) -> Result<bool> {
-    let Some(left_bits) = value_bits(left, file, wave, time, constants, resolver)? else {
+    let Some(left_bits) = value_bits(left, ctx)? else {
         return Ok(false);
     };
-    let Some(right_bits) = value_bits(right, file, wave, time, constants, resolver)? else {
+    let Some(right_bits) = value_bits(right, ctx)? else {
         return Ok(false);
     };
     Ok(bits_equal(&left_bits, &right_bits) == expect_equal)
 }
 
-fn value_bits(
-    expr: &str,
-    file: &str,
-    wave: &WellenReader,
-    time: Timestamp,
-    constants: &HashMap<String, String>,
-    resolver: &SignalResolver,
-) -> Result<Option<String>> {
+fn value_bits(expr: &str, ctx: &EvalContext<'_>) -> Result<Option<String>> {
     let expr = trim_wrapping_parens(expr.trim());
 
     if let Some(bits) = parse_sv_literal(expr) {
         return Ok(Some(bits));
     }
-    if let Some(bits) = constants.get(expr) {
+    if let Some(bits) = ctx.constants.get(expr) {
         return Ok(Some(bits.clone()));
     }
 
-    resolver.signal_value_bits(file, expr, wave, time)
+    ctx.resolver
+        .signal_value_bits(ctx.file, expr, ctx.wave, ctx.time)
 }
 
 fn bits_equal(left: &str, right: &str) -> bool {
@@ -404,8 +412,8 @@ fn sequential_block_triggered(
     resolver: &SignalResolver,
 ) -> Result<bool> {
     for (signal, edge) in triggers {
-        let current = resolver.signal_value_bits(file, &signal, wave, time)?;
-        let previous = resolver.signal_value_bits(file, &signal, wave, previous_time)?;
+        let current = resolver.signal_value_bits(file, signal, wave, time)?;
+        let previous = resolver.signal_value_bits(file, signal, wave, previous_time)?;
         if edge_matches(previous.as_deref(), current.as_deref(), *edge) {
             return Ok(true);
         }
@@ -533,9 +541,9 @@ fn edge_matches(previous: Option<&str>, current: Option<&str>, edge: EdgeKind) -
 
 fn collect_assignment_statements(
     parsed_files: &[ParsedFile],
-    blocks_by_location: &HashMap<(String, usize, usize), Block>,
+    blocks_by_location: &HashMap<BlockLocation, Block>,
     guard_map: &HashMap<(String, usize), Vec<Guard>>,
-    triggers_by_location: &HashMap<(String, usize, usize), Vec<(String, EdgeKind)>>,
+    triggers_by_location: &HashMap<BlockLocation, BlockTriggers>,
 ) -> Result<Vec<AssignmentStatement>> {
     let mut statements = Vec::new();
 
@@ -860,7 +868,7 @@ fn collect_named_constants(parsed_files: &[ParsedFile]) -> HashMap<String, Strin
                 .trim_matches(',')
                 .trim();
             let value = value
-                .split(|ch: char| matches!(ch, ',' | ';' | '}'))
+                .split([',', ';', '}'])
                 .next()
                 .unwrap_or_default()
                 .trim();

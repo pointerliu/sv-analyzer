@@ -114,9 +114,7 @@ fn keeps_multi_target_assignments_as_one_dataflow_entry_with_list_output() {
     let _ = fs::remove_file(fixture);
 }
 
-fn collect_entries(
-    blocks: &sva_core::block::BlockSet,
-) -> BTreeSet<(String, String, String, Vec<String>, Vec<String>)> {
+fn collect_entries(blocks: &sva_core::block::BlockSet) -> BTreeSet<DataflowEntry> {
     blocks
         .blocks()
         .iter()
@@ -141,6 +139,8 @@ fn collect_entries(
         })
         .collect()
 }
+
+type DataflowEntry = (String, String, String, Vec<String>, Vec<String>);
 
 fn entry(
     module_scope: &str,
