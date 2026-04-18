@@ -17,6 +17,11 @@ pub trait CoverageTracker {
         let _ = (file, line_start, line_end);
         true
     }
+
+    fn is_scope_elaborated(&self, scope: &str) -> bool {
+        let _ = scope;
+        true
+    }
 }
 
 pub mod elaboration;

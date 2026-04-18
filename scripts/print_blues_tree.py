@@ -108,7 +108,7 @@ def describe_node(
             return (
                 f"{display_signal(signal, full_signal)}, time={node.get('time')}, "
                 f"bid={block_id}, block=<missing>",
-                ("block", block_id, node.get("time")),
+                ("block", block_id, node.get("time"), signal),
             )
 
         line = (
@@ -116,14 +116,14 @@ def describe_node(
             f"module={display_module(block['scope'])}, bid={block['id']}, "
             f"type={block['block_type']}, lines={block['line_start']}-{block['line_end']}"
         )
-        return line, ("block", block_id, node.get("time"))
+        return line, ("block", block_id, node.get("time"), signal)
 
     literal = node.get("signal", {}).get("name", "<literal>")
     line = (
         f"{display_signal(signal, full_signal)}, time={node.get('time')}, "
         f"literal={display_signal(literal, full_signal)}"
     )
-    return line, ("literal", literal, node.get("time"))
+    return line, ("literal", literal, node.get("time"), signal)
 
 
 def print_tree(

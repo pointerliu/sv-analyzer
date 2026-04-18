@@ -129,6 +129,99 @@ fn blues_prunes_same_signal_driver_from_non_elaborated_generate_branch() {
     )));
 }
 
+#[test]
+fn blues_prunes_module_port_from_non_elaborated_generate_branch() {
+    let block_set = BlockSet::new(vec![
+        Block::builder()
+            .id(BlockId(10))
+            .block_type(BlockType::Assign)
+            .circuit_type(CircuitType::Combinational)
+            .module_scope("TOP.dut")
+            .source_file("/repo/rtl/if_stage.sv")
+            .lines(500, 500)
+            .unwrap()
+            .dataflow(vec![entry(
+                "TOP.dut.if_id_pipe_reg_we",
+                &["TOP.dut.fetch_addr"],
+            )])
+            .code_snippet("assign if_id_pipe_reg_we = fetch_addr;")
+            .build()
+            .unwrap(),
+        Block::builder()
+            .id(BlockId(11))
+            .block_type(BlockType::ModOutput)
+            .circuit_type(CircuitType::Combinational)
+            .module_scope("TOP.dut.prefetch_buffer_i")
+            .source_file("/repo/rtl/ibex_prefetch_buffer.sv")
+            .lines(26, 26)
+            .unwrap()
+            .dataflow(vec![entry(
+                "TOP.dut.fetch_addr",
+                &["TOP.dut.prefetch_buffer_i.addr_o"],
+            )])
+            .code_snippet("output logic [31:0] addr_o,")
+            .build()
+            .unwrap(),
+        Block::builder()
+            .id(BlockId(12))
+            .block_type(BlockType::ModOutput)
+            .circuit_type(CircuitType::Combinational)
+            .module_scope("TOP.dut.icache_i")
+            .source_file("/repo/rtl/ibex_icache.sv")
+            .lines(37, 37)
+            .unwrap()
+            .dataflow(vec![entry(
+                "TOP.dut.fetch_addr",
+                &["TOP.dut.icache_i.addr_o"],
+            )])
+            .code_snippet("output logic [31:0] addr_o,")
+            .build()
+            .unwrap(),
+    ])
+    .unwrap();
+    let path = write_tree_json(
+        r#"{
+  "type": "NETLIST",
+  "stmtsp": [
+    { "type": "ASSIGNW", "loc": "/repo/rtl/if_stage.sv,500:3,500:38" },
+    {
+      "type": "CELL",
+      "name": "gen_prefetch_buffer.prefetch_buffer_i",
+      "loc": "/repo/rtl/if_stage.sv,317:7,317:24"
+    }
+  ]
+}"#,
+    );
+    let elaboration = VerilatorElaborationIndex::from_tree_json_file(&path).unwrap();
+    let coverage = Arc::new(ElaboratedCoverageTracker::new(
+        Arc::new(FixtureCoverage),
+        elaboration,
+    ));
+
+    let path = BluesSlicer::new(block_set, coverage)
+        .slice(&SliceRequest {
+            signal: SignalNode::named("TOP.dut.if_id_pipe_reg_we"),
+            time: Timestamp(5),
+            min_time: Timestamp(0),
+        })
+        .unwrap();
+
+    assert!(path.nodes.iter().any(|node| matches!(
+        node,
+        TimedSliceNode::Block {
+            block_id: BlockId(11),
+            time: Some(Timestamp(5)),
+        }
+    )));
+    assert!(!path.nodes.iter().any(|node| matches!(
+        node,
+        TimedSliceNode::Block {
+            block_id: BlockId(12),
+            ..
+        }
+    )));
+}
+
 #[derive(Debug)]
 struct FixtureCoverage;
 

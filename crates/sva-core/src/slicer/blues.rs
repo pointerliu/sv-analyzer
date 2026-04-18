@@ -273,7 +273,7 @@ fn is_elaborated(coverage: &dyn CoverageTracker, block: &Block) -> bool {
         block.block_type(),
         BlockType::ModInput | BlockType::ModOutput
     ) {
-        return true;
+        return coverage.is_scope_elaborated(block.module_scope());
     }
     coverage.is_block_elaborated(block.source_file(), block.line_start(), block.line_end())
 }

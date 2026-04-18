@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::path::Path;
 use std::path::PathBuf;
@@ -14,6 +14,7 @@ use crate::types::Timestamp;
 pub struct VerilatorElaborationIndex {
     assign_like_ranges_by_file: HashMap<String, Vec<ElaboratedLineRange>>,
     always_ranges_by_file: HashMap<String, Vec<ElaboratedLineRange>>,
+    instance_names: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +68,21 @@ impl VerilatorElaborationIndex {
         self.range_intersects(&self.always_ranges_by_file, file, line_start, line_end)
     }
 
+    pub fn is_scope_elaborated(&self, scope: &str) -> bool {
+        if self.instance_names.is_empty() {
+            return true;
+        }
+
+        let scope_parts = scope.split('.').collect::<Vec<_>>();
+        if scope_parts.len() <= 2 {
+            return true;
+        }
+
+        self.instance_names
+            .iter()
+            .any(|instance| scope_ends_with_instance(&scope_parts, instance))
+    }
+
     fn collect_value(&mut self, value: &Value, file_map: &HashMap<String, String>) {
         match value {
             Value::Object(object) => {
@@ -102,6 +118,15 @@ impl VerilatorElaborationIndex {
             .get(&file_ref)
             .cloned()
             .unwrap_or_else(|| normalize_file_key(&file_ref));
+
+        if node_type == "CELL" {
+            if let Some(name) = object.get("name").and_then(Value::as_str) {
+                insert_instance_name(&mut self.instance_names, name);
+            }
+            if let Some(orig_name) = object.get("origName").and_then(Value::as_str) {
+                insert_instance_name(&mut self.instance_names, orig_name);
+            }
+        }
 
         if is_assign_like_node(node_type) {
             self.assign_like_ranges_by_file
@@ -173,10 +198,33 @@ impl CoverageTracker for ElaboratedCoverageTracker {
         self.elaboration
             .is_block_elaborated(file, line_start, line_end)
     }
+
+    fn is_scope_elaborated(&self, scope: &str) -> bool {
+        self.elaboration.is_scope_elaborated(scope)
+    }
 }
 
 fn is_assign_like_node(node_type: &str) -> bool {
     matches!(node_type, "ASSIGN" | "ASSIGNW" | "ASSIGNDLY")
+}
+
+fn insert_instance_name(instance_names: &mut HashSet<String>, name: &str) {
+    instance_names.insert(name.to_string());
+    if let Some(leaf) = name.rsplit('.').next() {
+        instance_names.insert(leaf.to_string());
+    }
+}
+
+fn scope_ends_with_instance(scope_parts: &[&str], instance: &str) -> bool {
+    let instance_parts = instance.split('.').collect::<Vec<_>>();
+    if instance_parts.is_empty() || instance_parts.len() > scope_parts.len() {
+        return false;
+    }
+
+    scope_parts
+        .windows(instance_parts.len())
+        .last()
+        .is_some_and(|suffix| suffix == instance_parts.as_slice())
 }
 
 fn parse_verilator_loc(loc: &str) -> Option<(String, ElaboratedLineRange)> {
