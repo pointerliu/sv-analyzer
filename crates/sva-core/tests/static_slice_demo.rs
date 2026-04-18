@@ -10,6 +10,7 @@ use sva_core::types::{BlockId, SignalNode, SignalNodeKind, TimedSliceNode, Times
 fn instruction_execution_path_uses_shared_graph_container() {
     let path: InstructionExecutionPath = SliceGraph {
         target: "x".into(),
+        start_time: None,
         nodes: vec![TimedSliceNode::Block {
             block_id: BlockId(99),
             time: Some(Timestamp(7)),

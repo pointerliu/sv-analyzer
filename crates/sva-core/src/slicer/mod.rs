@@ -43,6 +43,7 @@ pub struct SliceBlock {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SliceGraph<TNode> {
     pub target: String,
+    pub start_time: Option<Timestamp>,
     pub nodes: Vec<TNode>,
     pub edges: Vec<SliceEdge<TNode>>,
     pub blocks: Vec<SliceBlock>,
@@ -88,6 +89,7 @@ where
 
         Ok(StableSliceGraphJson {
             target: self.target.clone(),
+            start_time: self.start_time,
             nodes: self
                 .nodes
                 .iter()

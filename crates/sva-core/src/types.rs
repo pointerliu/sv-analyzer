@@ -185,6 +185,8 @@ pub struct StableSliceEdgeJson {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StableSliceGraphJson {
     pub target: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<Timestamp>,
     pub nodes: Vec<StableSliceNodeJson>,
     pub edges: Vec<StableSliceEdgeJson>,
     pub blocks: Vec<BlockJson>,

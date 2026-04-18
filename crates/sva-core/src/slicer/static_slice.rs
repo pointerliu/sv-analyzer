@@ -105,6 +105,7 @@ impl StaticSlicer {
 
         Ok(StaticSliceGraph {
             target: request.signal.name.clone(),
+            start_time: None,
             nodes,
             edges: edge_keys
                 .into_iter()

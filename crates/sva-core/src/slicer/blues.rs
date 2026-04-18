@@ -210,6 +210,7 @@ impl BluesSlicer {
 
         Ok(InstructionExecutionPath {
             target: request.signal.name.clone(),
+            start_time: Some(request.time),
             nodes,
             edges: edge_keys
                 .into_iter()
