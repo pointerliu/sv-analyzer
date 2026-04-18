@@ -30,7 +30,7 @@ cargo run -p sva_cli -- blocks query --input <blockize-json> [--block-id <id>] [
 cargo run -p sva_cli -- slice --static --sv <file> --signal <hierarchical-name>
 cargo run -p sva_cli -- slice --static --project-path <dir> --signal <hierarchical-name> [--include-paths <dir1,dir2,...>]
 
-cargo run -p sva_cli -- slice --sv <file> --vcd <file> --signal <hierarchical-name> --time <t> --min-time <t>
+cargo run -p sva_cli -- slice --sv <file> --vcd <file> [--tree-json <verilator-tree-json>] [--tree-meta-json <verilator-tree-meta-json>] --signal <hierarchical-name> --time <t> --min-time <t>
 cargo run -p sva_cli -- coverage --sv <file> --vcd <file> --time <t>
 cargo run -p sva_cli -- wave --vcd <file> --signal <hierarchical-name> --time <t>
 ```
@@ -102,6 +102,8 @@ cargo run -p sva_cli -- slice \
   --sv /home/lzz/exp_wkdir/ibex_test/ibex/examples/simple_system/rtl/ibex_simple_system.sv \
   --include-paths /home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/ip/prim/rtl,/home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/dv/sv/dv_utils \
   --vcd /home/lzz/exp_wkdir/ibex_test/ibex/build/lowrisc_ibex_ibex_simple_system_cosim_0/sim-verilator/sim.fst \
+  --tree-json /home/lzz/exp_wkdir/ibex_test/ibex/build/lowrisc_ibex_ibex_simple_system_cosim_0/sim-verilator/Vibex_simple_system_027_begin.tree.json \
+  --tree-meta-json /home/lzz/exp_wkdir/ibex_test/ibex/build/lowrisc_ibex_ibex_simple_system_cosim_0/sim-verilator/Vibex_simple_system.tree.meta.json \
   --signal TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o \
   --clock TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.clk_i \
   --clk-step 2 \
@@ -114,51 +116,9 @@ The Ibex examples above use `--project-path` for `ibex/rtl`, and add
 `examples/simple_system/rtl/ibex_simple_system.sv` explicitly with `--sv`
 because that top-level wrapper is outside the scanned `rtl/` tree.
 
-### Elaborated AST Dump (dead generate branches removed)
+For the native Verilator JSON setup and the observed pruning result, see
+`ibex_native_verilator_blues_check.md`.
 
-For tools that need the post-elaboration AST (with parameter-gated
-`generate` branches pruned), run Verilator with `--json-only` against the
-same file list used by the sim build. This stops Verilator after
-`V3Begin`, so `GENIF` / `PARSEREF` nodes are gone and only the live body
-of each `generate-if/else` survives:
-
-```bash
-# Starting from a fusesoc-generated Ibex build tree:
-IBEX_BUILD=/home/lzz/exp_wkdir/ibex_test/ibex/build/lowrisc_ibex_ibex_simple_system_cosim_0/sim-verilator
-
-# Reuse the VC file fusesoc produced, but strip C++-emission flags and
-# append --json-only. The grep just drops --cc / --Mdir / --exe /
-# CFLAGS / LDFLAGS / source-file lines so Verilator stops after elab.
-grep -v '^--cc$\|^--Mdir\|^--exe\|^-CFLAGS\|^-LDFLAGS\|\.cc$\|\.cpp$\|\.c$\|\.o$' \
-  $IBEX_BUILD/lowrisc_ibex_ibex_simple_system_cosim_0.vc > /tmp/ibex_jsononly.vc
-cat <<'EOF' >> /tmp/ibex_jsononly.vc
---json-only
---no-json-ids
---Mdir /tmp/ibex_jsonout
---json-only-output /tmp/ibex_elab.tree.json
-EOF
-
-mkdir -p /tmp/ibex_jsonout
-cd $IBEX_BUILD && verilator -f /tmp/ibex_jsononly.vc
-```
-
-Runs in well under a second on Ibex and produces two files:
-
-- `/tmp/ibex_elab.tree.json` — live AST (`ASSIGNW`, `ASSIGNDLY`,
-  `ALWAYS`, `INITIAL`, …). Every node carries a
-  `loc:"<file_id>,<l1>:<c1>,<l2>:<c2>"` field; dead generate-if branches
-  and non-instantiated parameter specializations of modules are absent.
-- `/tmp/ibex_jsonout/Vibex_simple_system.tree.meta.json` — `files` map
-  keyed by the two-letter `<file_id>` used in `loc`, with `filename` and
-  `realpath` entries.
-
-If you prefer to emit the dump alongside the normal `--cc` build rather
-than as a separate step, add `--dump-tree-json --dumpi-tree-json 3
---no-json-ids` to the `verilator_options` block of
-`dv/verilator/simple_system_cosim/ibex_simple_system_cosim.core` under
-the `sim` target. The build then writes one `*.tree.json` per Verilator
-pass; the file you want is the one produced after `V3Begin` (dead
-branches removed).
 
 ## Library Usage
 
