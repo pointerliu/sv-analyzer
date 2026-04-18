@@ -18,6 +18,17 @@ pub trait CoverageTracker {
         true
     }
 
+    fn is_scoped_line_covered_at(
+        &self,
+        scope: &str,
+        file: &str,
+        line: usize,
+        time: Timestamp,
+    ) -> Result<bool> {
+        let _ = scope;
+        self.is_line_covered_at(file, line, time)
+    }
+
     fn is_scope_elaborated(&self, scope: &str) -> bool {
         let _ = scope;
         true

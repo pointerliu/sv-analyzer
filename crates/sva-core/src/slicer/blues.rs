@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use crate::block::{Block, BlockSet, BlockType, CircuitType};
+use crate::block::{Block, BlockSet, BlockType, CircuitType, DataflowEntry};
 use crate::coverage::CoverageTracker;
 use crate::slicer::{BlockEdgeJson, BlockJson, InstructionExecutionPath, SliceRequest, Slicer};
 use crate::types::{BlockId, SignalNode, TimedSliceNode, Timestamp};
@@ -86,7 +86,9 @@ impl BluesSlicer {
 
                 match driver.circuit_type() {
                     CircuitType::Combinational => {
-                        for input in inputs_for_output(driver, &signal) {
+                        for input in
+                            inputs_for_output_at(driver, &signal, self.coverage.as_ref(), time)?
+                        {
                             if input.is_literal() {
                                 nodes.insert(TimedSliceNode::Literal {
                                     signal: input.clone(),
@@ -155,7 +157,12 @@ impl BluesSlicer {
                             continue;
                         }
 
-                        for input in inputs_for_output(driver, &signal) {
+                        for input in inputs_for_output_at(
+                            driver,
+                            &signal,
+                            self.coverage.as_ref(),
+                            previous_time,
+                        )? {
                             if input.is_literal() {
                                 let literal_node = TimedSliceNode::Literal {
                                     signal: input,
@@ -278,11 +285,60 @@ fn is_elaborated(coverage: &dyn CoverageTracker, block: &Block) -> bool {
     coverage.is_block_elaborated(block.source_file(), block.line_start(), block.line_end())
 }
 
-fn inputs_for_output(block: &Block, output: &SignalNode) -> Vec<SignalNode> {
-    block
+fn inputs_for_output_at(
+    block: &Block,
+    output: &SignalNode,
+    coverage: &dyn CoverageTracker,
+    time: Timestamp,
+) -> Result<Vec<SignalNode>> {
+    let entries = block
         .dataflow()
         .iter()
         .filter(|entry| entry.output.contains(output))
+        .collect::<Vec<_>>();
+    let covered_entries = covered_entries(block, coverage, time, &entries)?;
+    let active_entries = if covered_entries.is_empty() {
+        entries
+    } else {
+        covered_entries
+    };
+
+    Ok(active_entries
+        .into_iter()
         .flat_map(|entry| entry.inputs.iter().cloned())
+        .collect())
+}
+
+fn covered_entries<'a>(
+    block: &Block,
+    coverage: &dyn CoverageTracker,
+    time: Timestamp,
+    entries: &[&'a DataflowEntry],
+) -> Result<Vec<&'a DataflowEntry>> {
+    let mut covered = Vec::new();
+    for entry in entries {
+        for line in entry_output_lines(entry) {
+            if coverage.is_scoped_line_covered_at(
+                block.module_scope(),
+                block.source_file(),
+                line,
+                time,
+            )? {
+                covered.push(*entry);
+                break;
+            }
+        }
+    }
+    Ok(covered)
+}
+
+fn entry_output_lines(entry: &DataflowEntry) -> Vec<usize> {
+    entry
+        .output
+        .iter()
+        .filter_map(|signal| {
+            let line = signal.locate.line;
+            (line != 0).then_some(line)
+        })
         .collect()
 }

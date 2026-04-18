@@ -220,6 +220,98 @@ fn blues_keeps_dependencies_from_distinct_outputs_of_same_block() {
 }
 
 #[test]
+fn blues_uses_covered_combination_assignment_line_for_same_output() {
+    let block_set = BlockSet::new(vec![
+        Block::builder()
+            .id(BlockId(1))
+            .block_type(BlockType::Assign)
+            .circuit_type(CircuitType::Combinational)
+            .module_scope("demo")
+            .source_file("design.sv")
+            .lines(1, 1)
+            .unwrap()
+            .dataflow(vec![entry("boot_addr", &["boot_base"])])
+            .code_snippet("assign boot_addr = boot_base;")
+            .build()
+            .unwrap(),
+        Block::builder()
+            .id(BlockId(2))
+            .block_type(BlockType::Assign)
+            .circuit_type(CircuitType::Combinational)
+            .module_scope("demo")
+            .source_file("design.sv")
+            .lines(2, 2)
+            .unwrap()
+            .dataflow(vec![entry("jump_addr", &["jump_base"])])
+            .code_snippet("assign jump_addr = jump_base;")
+            .build()
+            .unwrap(),
+        Block::builder()
+            .id(BlockId(3))
+            .block_type(BlockType::Always)
+            .circuit_type(CircuitType::Combinational)
+            .module_scope("demo")
+            .source_file("design.sv")
+            .lines(10, 15)
+            .unwrap()
+            .dataflow(vec![
+                entry_with_line("fetch_addr_n", &["pc_mux_internal", "PC_BOOT", "boot_addr"], 12),
+                entry_with_line("fetch_addr_n", &["pc_mux_internal", "PC_JUMP", "jump_addr"], 13),
+            ])
+            .code_snippet(
+                "always_comb begin\n  case (pc_mux_internal)\n    PC_BOOT: fetch_addr_n = boot_addr;\n    PC_JUMP: fetch_addr_n = jump_addr;\n  endcase\nend",
+            )
+            .build()
+            .unwrap(),
+    ])
+    .unwrap();
+
+    let path = BluesSlicer::new(
+        block_set,
+        Arc::new(FixtureCoverage::covered([("design.sv", 13, 5)])),
+    )
+    .slice(&SliceRequest {
+        signal: SignalNode::named("fetch_addr_n"),
+        time: Timestamp(5),
+        min_time: Timestamp(0),
+    })
+    .unwrap();
+
+    assert!(path.nodes.iter().any(|node| matches!(
+        node,
+        TimedSliceNode::Block {
+            block_id: BlockId(2),
+            ..
+        }
+    )));
+    assert!(!path.nodes.iter().any(|node| matches!(
+        node,
+        TimedSliceNode::Block {
+            block_id: BlockId(1),
+            ..
+        }
+    )));
+    assert!(path.edges.iter().any(|edge| {
+        matches!(
+            edge.from,
+            TimedSliceNode::Block {
+                block_id: BlockId(2),
+                ..
+            }
+        ) && matches!(
+            edge.to,
+            TimedSliceNode::Block {
+                block_id: BlockId(3),
+                ..
+            }
+        ) && edge.signal.as_ref().map(|signal| signal.name.as_str()) == Some("jump_addr")
+    }));
+    assert!(!path.edges.iter().any(|edge| {
+        edge.signal.as_ref().map(|signal| signal.name.as_str()) == Some("boot_addr")
+    }));
+}
+
+#[test]
 fn blues_keeps_literals_as_terminal_nodes() {
     let block_set = BlockSet::new(vec![Block::builder()
         .id(BlockId(2))
@@ -361,11 +453,21 @@ impl CoverageTracker for FixtureCoverage {
 }
 
 fn entry(output: &str, inputs: &[&str]) -> DataflowEntry {
+    entry_with_line(output, inputs, 0)
+}
+
+fn entry_with_line(output: &str, inputs: &[&str], line: usize) -> DataflowEntry {
     DataflowEntry {
-        output: vec![SignalNode::named(output)],
+        output: vec![signal_with_line(output, line)],
         inputs: inputs
             .iter()
             .map(|input| SignalNode::named(*input))
             .collect::<HashSet<_>>(),
     }
+}
+
+fn signal_with_line(name: &str, line: usize) -> SignalNode {
+    let mut signal = SignalNode::named(name);
+    signal.locate.line = line;
+    signal
 }

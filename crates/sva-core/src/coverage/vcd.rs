@@ -15,6 +15,7 @@ pub struct VcdCoverageTracker {
     annotation_query_times: Vec<i64>,
     annotation_sample_times: Vec<i64>,
     traces_by_line: HashMap<(String, usize), Vec<CoverageTrace>>,
+    traces_by_scope_line: HashMap<(String, String, usize), Vec<CoverageTrace>>,
     elaborated_lines_by_file: HashMap<String, Vec<usize>>,
     clock_period: Option<i64>,
     #[allow(dead_code)]
@@ -22,7 +23,7 @@ pub struct VcdCoverageTracker {
     rising_edges: Vec<i64>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct CoverageTrace {
     samples: Vec<CoverageSample>,
 }
@@ -35,6 +36,7 @@ struct CoverageSample {
 
 #[derive(Debug)]
 struct TraceDescriptor {
+    scope: String,
     file: String,
     line: usize,
     signal_ref: SignalRef,
@@ -106,6 +108,7 @@ impl VcdCoverageTracker {
             };
 
         let mut traces_by_line = HashMap::new();
+        let mut traces_by_scope_line = HashMap::new();
         let mut elaborated_lines_by_file: HashMap<String, Vec<usize>> = HashMap::new();
         for descriptor in descriptors {
             let signal = waveform.get_signal(descriptor.signal_ref).ok_or_else(|| {
@@ -123,7 +126,13 @@ impl VcdCoverageTracker {
                 .push(descriptor.line);
 
             traces_by_line
-                .entry((descriptor.file, descriptor.line))
+                .entry((descriptor.file.clone(), descriptor.line))
+                .or_insert_with(Vec::new)
+                .push(CoverageTrace {
+                    samples: samples.clone(),
+                });
+            traces_by_scope_line
+                .entry((descriptor.scope, descriptor.file, descriptor.line))
                 .or_insert_with(Vec::new)
                 .push(CoverageTrace { samples });
         }
@@ -137,6 +146,7 @@ impl VcdCoverageTracker {
             annotation_query_times,
             annotation_sample_times,
             traces_by_line,
+            traces_by_scope_line,
             elaborated_lines_by_file,
             clock_period,
             clock_signal_ref,
@@ -171,6 +181,25 @@ impl VcdCoverageTracker {
             .get(&(normalized, line))
             .map(Vec::as_slice)
     }
+
+    fn scoped_traces_for(&self, scope: &str, file: &str, line: usize) -> Option<&[CoverageTrace]> {
+        let normalized_file = normalize_file_key(file);
+        let normalized_scope = normalize_scope_key(scope);
+        self.traces_by_scope_line
+            .get(&(normalized_scope.clone(), normalized_file.clone(), line))
+            .or_else(|| {
+                self.traces_by_scope_line
+                    .iter()
+                    .find(|((trace_scope, trace_file, trace_line), _)| {
+                        *trace_file == normalized_file
+                            && *trace_line == line
+                            && (trace_scope.ends_with(&normalized_scope)
+                                || normalized_scope.ends_with(trace_scope))
+                    })
+                    .map(|(_, traces)| traces)
+            })
+            .map(Vec::as_slice)
+    }
 }
 
 impl CoverageTracker for VcdCoverageTracker {
@@ -184,6 +213,35 @@ impl CoverageTracker for VcdCoverageTracker {
         };
 
         Ok(self.hit_count_on_annotation(file, line, annotation_index))
+    }
+
+    fn is_scoped_line_covered_at(
+        &self,
+        scope: &str,
+        file: &str,
+        line: usize,
+        time: Timestamp,
+    ) -> Result<bool> {
+        let Some(traces) = self.scoped_traces_for(scope, file, line) else {
+            return self.is_line_covered_at(file, line, time);
+        };
+        let annotation_time = time.0;
+        let current = traces
+            .iter()
+            .map(|trace| trace.count_at(annotation_time))
+            .sum::<u64>();
+        let previous = self
+            .clock_period
+            .and_then(|period| annotation_time.checked_sub(period))
+            .map(|previous_time| {
+                traces
+                    .iter()
+                    .map(|trace| trace.count_at(previous_time))
+                    .sum::<u64>()
+            })
+            .unwrap_or(0);
+
+        Ok(current.saturating_sub(previous) > 0)
     }
 
     fn delta_hits(&self, file: &str, line: usize, time: Timestamp) -> Result<u64> {
@@ -239,8 +297,13 @@ fn collect_trace_descriptors(waveform: &Waveform) -> Vec<TraceDescriptor> {
             let full_name = var.full_name(waveform.hierarchy());
             let base_name = full_name.rsplit('.').next().unwrap_or(full_name.as_str());
             let (file, line) = parse_trace_name(base_name)?;
+            let scope = full_name
+                .strip_suffix(&format!(".{base_name}"))
+                .map(normalize_scope_key)
+                .unwrap_or_default();
 
             Some(TraceDescriptor {
+                scope,
                 file,
                 line,
                 signal_ref: var.signal_ref(),
@@ -507,4 +570,8 @@ fn normalize_file_key(file: &str) -> String {
         .or_else(|| basename.strip_suffix(".v"))
         .unwrap_or(basename)
         .to_string()
+}
+
+fn normalize_scope_key(scope: &str) -> String {
+    scope.replace('\\', "/").replace('/', ".")
 }

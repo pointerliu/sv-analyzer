@@ -178,6 +178,17 @@ impl CoverageTracker for ElaboratedCoverageTracker {
         self.inner.is_line_covered_at(file, line, time)
     }
 
+    fn is_scoped_line_covered_at(
+        &self,
+        scope: &str,
+        file: &str,
+        line: usize,
+        time: Timestamp,
+    ) -> Result<bool> {
+        self.inner
+            .is_scoped_line_covered_at(scope, file, line, time)
+    }
+
     fn hit_count_at(&self, file: &str, line: usize, time: Timestamp) -> Result<u64> {
         self.inner.hit_count_at(file, line, time)
     }
