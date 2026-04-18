@@ -121,12 +121,16 @@ class GraphIndex:
             ):
                 return node
 
-        raise ValueError(f"root block {root_block_id} at time {root_time} was not found")
+        raise ValueError(
+            f"root block {root_block_id} at time {root_time} was not found"
+        )
 
     def children(self, node_id: int) -> list[ChildEntry]:
         return [
             ChildEntry(edge["from"], signal_name(edge.get("signal")))
-            for edge in sorted(self.edges_by_to.get(node_id, []), key=self._incoming_sort_key)
+            for edge in sorted(
+                self.edges_by_to.get(node_id, []), key=self._incoming_sort_key
+            )
         ]
 
     def has_children(self, entry: ChildEntry) -> bool:
@@ -178,6 +182,29 @@ class GraphIndex:
         snippet = block.get("code_snippet") or "<no code snippet>"
         return snippet.splitlines() or ["<no code snippet>"]
 
+    def code_snippet_highlight_indices(self, entry: ChildEntry) -> set[int]:
+        node = self.nodes_by_id[entry.node_id]
+        if node.get("kind") != "block":
+            return set()
+
+        block = self.blocks_by_id.get(node["block_id"])
+        if block is None:
+            return set()
+
+        signal = entry.incoming_signal
+        if not signal:
+            return set()
+
+        leaf_name = signal.rsplit(".", 1)[-1]
+        snippet = block.get("code_snippet") or ""
+        lines = snippet.splitlines() or []
+
+        highlighted = set()
+        for i, line in enumerate(lines):
+            if leaf_name in line:
+                highlighted.add(i)
+        return highlighted
+
     def _incoming_sort_key(self, edge: dict[str, Any]) -> tuple[Any, ...]:
         from_node = self.nodes_by_id[edge["from"]]
         return (
@@ -189,7 +216,9 @@ class GraphIndex:
 
 
 class ExplorerState:
-    def __init__(self, index: GraphIndex, root_id: int, root_signal: str | None) -> None:
+    def __init__(
+        self, index: GraphIndex, root_id: int, root_signal: str | None
+    ) -> None:
         self.index = index
         self.root = ChildEntry(root_id, root_signal)
         self.expanded_paths: set[tuple[tuple[Any, ...], ...]] = set()
@@ -210,7 +239,9 @@ class ExplorerState:
             identity = self.index.identity(entry)
             already_shown = identity in seen
             row_path = path + (identity,)
-            row = VisibleRow(entry, depth, parent_has_next, is_last, already_shown, row_path)
+            row = VisibleRow(
+                entry, depth, parent_has_next, is_last, already_shown, row_path
+            )
             rows.append(row)
 
             if already_shown:
@@ -282,7 +313,9 @@ class ExplorerState:
         self.code_scroll = min(max(self.code_scroll + delta, 0), max_scroll)
 
     def clamp_code_scroll(self, visible_line_count: int) -> None:
-        self.code_scroll = min(self.code_scroll, self.max_code_scroll(visible_line_count))
+        self.code_scroll = min(
+            self.code_scroll, self.max_code_scroll(visible_line_count)
+        )
 
     def max_code_scroll(self, visible_line_count: int) -> int:
         line_count = len(self.index.code_snippet_lines(self.selected_row().entry))
@@ -297,6 +330,8 @@ class ExplorerState:
 def run_curses(stdscr: Any, state: ExplorerState, full_signal: bool) -> None:
     curses.curs_set(0)
     stdscr.keypad(True)
+    curses.use_default_colors()
+    curses.init_pair(1, curses.COLOR_GREEN, -1)
     top_scroll = 0
 
     while True:
@@ -354,22 +389,46 @@ def draw_screen(
     add_line(stdscr, 0, right_start, "Code context", width, curses.A_BOLD)
     draw_vertical_rule(stdscr, 0, content_height, left_width)
 
-    for screen_row, row in enumerate(rows[top_scroll : top_scroll + content_height - 1], start=1):
+    for screen_row, row in enumerate(
+        rows[top_scroll : top_scroll + content_height - 1], start=1
+    ):
         row_index = top_scroll + screen_row - 1
-        attr = curses.A_REVERSE if row_index == state.selected_index else curses.A_NORMAL
-        add_line(stdscr, screen_row, 0, row.render(state.index, full_signal), left_width + 1, attr)
+        attr = (
+            curses.A_REVERSE if row_index == state.selected_index else curses.A_NORMAL
+        )
+        add_line(
+            stdscr,
+            screen_row,
+            0,
+            row.render(state.index, full_signal),
+            left_width + 1,
+            attr,
+        )
 
     snippet_lines = state.index.code_snippet_lines(selected_row.entry)
+    highlight_indices = state.index.code_snippet_highlight_indices(selected_row.entry)
     code_visible_lines = max(1, content_height - 1)
     code_start = state.code_scroll
     code_end = code_start + code_visible_lines
     max_scroll = state.max_code_scroll(code_visible_lines)
     scroll_text = f"lines {code_start + 1}-{min(code_end, len(snippet_lines))}/{len(snippet_lines)}"
+    if highlight_indices:
+        scroll_text += f" ({len(highlight_indices)} line{'s' if len(highlight_indices) != 1 else ''} driving signal)"
     if max_scroll:
         scroll_text += " PgUp/PgDn or [/] scroll"
-    add_line(stdscr, 0, right_start + max(0, right_width - len(scroll_text) - 1), scroll_text, width)
+    add_line(
+        stdscr,
+        0,
+        right_start + max(0, right_width - len(scroll_text) - 1),
+        scroll_text,
+        width,
+    )
     for offset, line in enumerate(snippet_lines[code_start:code_end], start=1):
-        add_line(stdscr, offset, right_start, line, width)
+        line_index = code_start + offset - 1
+        if line_index in highlight_indices:
+            add_line(stdscr, offset, right_start, line, width, curses.color_pair(1))
+        else:
+            add_line(stdscr, offset, right_start, line, width)
 
     bottom_row = content_height
     add_line(stdscr, bottom_row, 0, "-" * max(1, width - 1), width)
