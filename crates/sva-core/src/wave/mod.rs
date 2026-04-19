@@ -13,4 +13,4 @@ pub trait WaveformReader {
 }
 
 pub mod wellen;
-pub use wellen::WellenReader;
+pub use wellen::{apply_scope_remap_to_graph, WellenReader};

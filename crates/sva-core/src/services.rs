@@ -11,7 +11,7 @@ use crate::slicer::SliceRequest;
 use crate::slicer::{BluesSlicer, StaticSlicer};
 use crate::types::{SignalNode, Timestamp};
 use crate::wave::WaveformReader;
-use crate::wave::WellenReader;
+use crate::wave::{apply_scope_remap_to_graph, WellenReader};
 use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -126,9 +126,16 @@ pub fn slice_dynamic(req: DynamicSliceRequest) -> Result<crate::types::StableSli
         min_time: Timestamp(req.min_time),
     };
 
-    let stable_json = BluesSlicer::new(block_set, coverage)
+    let mut stable_json = BluesSlicer::new(block_set, coverage)
         .slice(&request)?
         .stable_json_graph()?;
+
+    // Rewrite scopes/signal names to FST-truthful paths so downstream tools
+    // (waveform sampling, hierarchical lookups) see the generate-block
+    // wrappers Verilator emits.
+    let waveform_reader = WellenReader::open(&req.vcd)?;
+    apply_scope_remap_to_graph(&waveform_reader, &mut stable_json);
+
     Ok(stable_json)
 }
 
