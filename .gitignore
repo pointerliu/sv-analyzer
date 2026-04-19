@@ -7,3 +7,9 @@ sv-analysis/
 target/
 *.json
 *.ast.txt
+.ruff_cache/
+__pycache__/
+*.py[cod]
+.codex
+.omx/
+ibex_native_verilator_blues_check.md

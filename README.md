@@ -61,9 +61,9 @@ Example:
 
 ```bash
 cargo run -p sva_cli -- blockize \
-  --project-path /home/lzz/exp_wkdir/ibex_test/ibex/rtl \
-  --sv /home/lzz/exp_wkdir/ibex_test/ibex/examples/simple_system/rtl/ibex_simple_system.sv \
-  --include-paths /home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/ip/prim/rtl,/home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/dv/sv/dv_utils \
+  --project-path /path/to/ibex/rtl \
+  --sv /path/to/ibex/examples/simple_system/rtl/ibex_simple_system.sv \
+  --include-paths /path/to/ibex/vendor/lowrisc_ip/ip/prim/rtl,/path/to/ibex/vendor/lowrisc_ip/dv/sv/dv_utils \
   > ibex_blocks.json
 
 cargo run -p sva_cli -- blocks query \
@@ -79,17 +79,17 @@ Ibex blockize with external include roots:
 
 ```bash
 cargo run -p sva_cli -- blockize \
-  --project-path /home/lzz/exp_wkdir/ibex_test/ibex/rtl \
-  --include-paths /home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/ip/prim/rtl,/home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/dv/sv/dv_utils
+  --project-path /path/to/ibex/rtl \
+  --include-paths /path/to/ibex/vendor/lowrisc_ip/ip/prim/rtl,/path/to/ibex/vendor/lowrisc_ip/dv/sv/dv_utils
 ```
 
 Ibex static slice for the simple-system top-level:
 
 ```bash
 cargo run -p sva_cli -- slice --static \
-  --project-path /home/lzz/exp_wkdir/ibex_test/ibex/rtl \
-  --sv /home/lzz/exp_wkdir/ibex_test/ibex/examples/simple_system/rtl/ibex_simple_system.sv \
-  --include-paths /home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/ip/prim/rtl,/home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/dv/sv/dv_utils \
+  --project-path /path/to/ibex/rtl \
+  --sv /path/to/ibex/examples/simple_system/rtl/ibex_simple_system.sv \
+  --include-paths /path/to/ibex/vendor/lowrisc_ip/ip/prim/rtl,/path/to/ibex/vendor/lowrisc_ip/dv/sv/dv_utils \
   --signal TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o \
   > ibex_static_slice.json
 ```
@@ -98,12 +98,12 @@ Ibex dynamic (blues) slice for the simple-system top-level:
 
 ```bash
 cargo run -p sva_cli -- slice \
-  --project-path /home/lzz/exp_wkdir/ibex_test/ibex/rtl \
-  --sv /home/lzz/exp_wkdir/ibex_test/ibex/examples/simple_system/rtl/ibex_simple_system.sv \
-  --include-paths /home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/ip/prim/rtl,/home/lzz/exp_wkdir/ibex_test/ibex/vendor/lowrisc_ip/dv/sv/dv_utils \
-  --vcd /home/lzz/exp_wkdir/ibex_test/ibex/build/lowrisc_ibex_ibex_simple_system_cosim_0/sim-verilator/sim.fst \
-  --tree-json /home/lzz/exp_wkdir/ibex_test/ibex/build/lowrisc_ibex_ibex_simple_system_cosim_0/sim-verilator/Vibex_simple_system_027_begin.tree.json \
-  --tree-meta-json /home/lzz/exp_wkdir/ibex_test/ibex/build/lowrisc_ibex_ibex_simple_system_cosim_0/sim-verilator/Vibex_simple_system.tree.meta.json \
+  --project-path /path/to/ibex/rtl \
+  --sv /path/to/ibex/examples/simple_system/rtl/ibex_simple_system.sv \
+  --include-paths /path/to/ibex/vendor/lowrisc_ip/ip/prim/rtl,/path/to/ibex/vendor/lowrisc_ip/dv/sv/dv_utils \
+  --vcd /path/to/ibex/build/lowrisc_ibex_ibex_simple_system_cosim_0/sim-verilator/sim.fst \
+  --tree-json /path/to/ibex/build/lowrisc_ibex_ibex_simple_system_cosim_0/sim-verilator/Vibex_simple_system_027_begin.tree.json \
+  --tree-meta-json /path/to/ibex/build/lowrisc_ibex_ibex_simple_system_cosim_0/sim-verilator/Vibex_simple_system.tree.meta.json \
   --signal TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.pc_id_o \
   --clock TOP.ibex_simple_system.u_top.u_ibex_top.u_ibex_core.if_stage_i.clk_i \
   --clk-step 2 \
