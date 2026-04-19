@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/sva-core",
     "crates/sva-cli",
+    "crates/sva-tui",
     "crates/sva-vscode",
     "crates/sva-mcp",
 ]
