@@ -7,8 +7,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sva_core::ast::ParseOptions;
 use sva_core::services::{
-    blockize, coverage_report, slice_dynamic, slice_static, wave_value, BlockizeRequest,
-    CoverageReportRequest, DynamicSliceRequest, StaticSliceRequest, WaveValueRequest,
+    blockize, coverage_report, slice_dynamic, slice_static, wave_signal_search, wave_value,
+    BlockizeRequest, CoverageReportRequest, DynamicSliceRequest, StaticSliceRequest,
+    WaveSignalSearchRequest, WaveValueRequest,
 };
 
 #[derive(Debug, Parser)]
@@ -196,12 +197,32 @@ struct SliceArgs {
 
 #[derive(Debug, Args)]
 struct WaveArgs {
+    #[command(subcommand)]
+    command: Option<WaveCommand>,
+    #[arg(long, help = "Path to VCD or FST waveform file")]
+    vcd: Option<PathBuf>,
+    #[arg(
+        long,
+        help = "Hierarchical scoped signal name (e.g. TOP.tb.dut.result)"
+    )]
+    signal: Option<String>,
     #[arg(long)]
+    time: Option<i64>,
+}
+
+#[derive(Debug, Subcommand)]
+enum WaveCommand {
+    Search(WaveSearchArgs),
+}
+
+#[derive(Debug, Args)]
+struct WaveSearchArgs {
+    #[arg(long, help = "Path to VCD or FST waveform file")]
     vcd: PathBuf,
-    #[arg(long, help = "hierarchical signal name (e.g. tb.dut.u_stage3.result)")]
-    signal: String,
-    #[arg(long)]
-    time: i64,
+    #[arg(long, help = "Fuzzy signal-name search query")]
+    query: String,
+    #[arg(long, default_value_t = 5)]
+    limit: usize,
 }
 
 fn main() -> Result<()> {
@@ -322,10 +343,25 @@ fn run_blues(args: SliceArgs) -> Result<()> {
 }
 
 fn run_wave(args: WaveArgs) -> Result<()> {
+    if let Some(command) = args.command {
+        return match command {
+            WaveCommand::Search(args) => run_wave_search(args),
+        };
+    }
+
+    let vcd = args
+        .vcd
+        .ok_or_else(|| anyhow::anyhow!("--vcd is required for wave value query"))?;
+    let signal = args
+        .signal
+        .ok_or_else(|| anyhow::anyhow!("--signal is required for wave value query"))?;
+    let time = args
+        .time
+        .ok_or_else(|| anyhow::anyhow!("--time is required for wave value query"))?;
     let value = wave_value(WaveValueRequest {
-        vcd: args.vcd,
-        signal: args.signal.clone(),
-        time: args.time,
+        vcd,
+        signal: signal.clone(),
+        time,
     })?;
     #[derive(serde::Serialize)]
     struct WaveOutput {
@@ -339,13 +375,23 @@ fn run_wave(args: WaveArgs) -> Result<()> {
         pretty_hex: Option<String>,
     }
     let output = WaveOutput {
-        signal: args.signal,
-        time: args.time,
+        signal,
+        time,
         value: WaveValueOutput {
             raw_bits: value.raw_bits,
             pretty_hex: value.pretty_hex,
         },
     };
+    println!("{}", serde_json::to_string_pretty(&output)?);
+    Ok(())
+}
+
+fn run_wave_search(args: WaveSearchArgs) -> Result<()> {
+    let output = wave_signal_search(WaveSignalSearchRequest {
+        vcd: args.vcd,
+        query: args.query,
+        limit: args.limit,
+    })?;
     println!("{}", serde_json::to_string_pretty(&output)?);
     Ok(())
 }

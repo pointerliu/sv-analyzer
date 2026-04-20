@@ -65,6 +65,18 @@ b0011 !\n\
     path
 }
 
+#[test]
+fn fuzzy_searches_waveform_signal_names() {
+    let path = write_fixture_vcd();
+    let wave = WellenReader::open_metadata(&path).unwrap();
+
+    let matches = wave.search_signal_names("dut state", 3);
+
+    assert_eq!(matches, vec!["tb.dut.state".to_string()]);
+
+    let _ = fs::remove_file(path);
+}
+
 fn write_collision_fixture_vcd() -> PathBuf {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)

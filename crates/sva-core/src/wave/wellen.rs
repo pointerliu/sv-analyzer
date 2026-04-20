@@ -1,7 +1,10 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
 use wellen::simple::{self, Waveform};
 use wellen::{Hierarchy, SignalRef, SignalValue as WellenSignalValue};
 
@@ -10,7 +13,7 @@ use crate::wave::{SignalValue, WaveformReader};
 
 #[derive(Debug)]
 pub struct WellenReader {
-    waveform: Waveform,
+    waveform: RefCell<Waveform>,
     signal_lookup: HashMap<String, Option<SignalRef>>,
     time_table: Vec<u64>,
     scope_remap: HashMap<String, String>,
@@ -18,17 +21,19 @@ pub struct WellenReader {
 
 impl WellenReader {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let mut waveform = simple::read(path.as_ref())
+        Self::open_metadata(path)
+    }
+
+    pub fn open_metadata(path: impl AsRef<Path>) -> Result<Self> {
+        let waveform = simple::read(path.as_ref())
             .with_context(|| format!("failed to open waveform {}", path.as_ref().display()))?;
 
         let signal_lookup = build_signal_lookup(waveform.hierarchy());
-        let signal_refs: Vec<_> = signal_lookup.values().filter_map(|value| *value).collect();
-        waveform.load_signals(&signal_refs);
         let time_table = waveform.time_table().to_vec();
         let scope_remap = build_scope_remap(waveform.hierarchy());
 
         Ok(Self {
-            waveform,
+            waveform: RefCell::new(waveform),
             signal_lookup,
             time_table,
             scope_remap,
@@ -37,6 +42,32 @@ impl WellenReader {
 
     pub fn signal_names(&self) -> impl Iterator<Item = &str> {
         self.signal_lookup.keys().map(String::as_str)
+    }
+
+    pub fn search_signal_names(&self, query: &str, limit: usize) -> Vec<String> {
+        let normalized_query = normalize_search_text(query);
+        let matcher = SkimMatcherV2::default();
+        let waveform = self.waveform.borrow();
+        let hierarchy = waveform.hierarchy();
+        let mut scored = hierarchy
+            .iter_vars()
+            .filter_map(|var| {
+                let name = var.full_name(hierarchy);
+                let score = matcher
+                    .fuzzy_match(&name, query)
+                    .into_iter()
+                    .chain(matcher.fuzzy_match(&normalize_search_text(&name), &normalized_query))
+                    .max()?;
+                Some((score, name))
+            })
+            .collect::<Vec<_>>();
+        scored.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| right.1.cmp(&left.1)));
+        scored
+            .into_iter()
+            .rev()
+            .take(limit)
+            .map(|(_, name)| name)
+            .collect()
     }
 
     /// Map a logical hierarchical scope (with generate-block wrappers stripped,
@@ -112,10 +143,11 @@ impl WaveformReader for WellenReader {
             None => return Ok(None),
         };
 
-        let waveform_signal = self
-            .waveform
+        let mut waveform = self.waveform.borrow_mut();
+        waveform.load_signals(&[signal_ref]);
+        let waveform_signal = waveform
             .get_signal(signal_ref)
-            .ok_or_else(|| anyhow!("signal data not loaded for {}", signal.as_str()))?;
+            .ok_or_else(|| anyhow!("failed to load signal data for {}", signal.as_str()))?;
 
         let time_idx = match self.time_table.binary_search(&(time.0 as u64)) {
             Ok(index) => index,
@@ -212,6 +244,14 @@ fn build_signal_lookup(hierarchy: &Hierarchy) -> HashMap<String, Option<SignalRe
     }
 
     lookup
+}
+
+fn normalize_search_text(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .map(|ch| ch.to_ascii_lowercase())
+        .collect()
 }
 
 fn pretty_hex(raw_bits: &str) -> Option<String> {

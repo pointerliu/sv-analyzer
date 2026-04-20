@@ -42,6 +42,36 @@ fn cli_wave_outputs_json_signal_value() {
     let _ = fs::remove_file(fixture);
 }
 
+#[test]
+fn cli_wave_search_outputs_fuzzy_signal_matches() {
+    let fixture = write_wave_vcd();
+
+    let output = Command::new(main_bin())
+        .args([
+            "wave",
+            "search",
+            "--vcd",
+            fixture.to_str().unwrap(),
+            "--query",
+            "dut state",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["query"], "dut state");
+    assert_eq!(json["matches"][0], "tb.dut.state");
+
+    let _ = fs::remove_file(fixture);
+}
+
 fn write_wave_vcd() -> PathBuf {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
