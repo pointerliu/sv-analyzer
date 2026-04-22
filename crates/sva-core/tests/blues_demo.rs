@@ -217,6 +217,13 @@ fn blues_keeps_dependencies_from_distinct_outputs_of_same_block() {
             }
         ) && edge.signal.as_ref().map(|signal| signal.name.as_str()) == Some("right_src")
     }));
+    assert_eq!(
+        path.blocks
+            .iter()
+            .map(|block| block.id.0)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3, 4]
+    );
 }
 
 #[test]

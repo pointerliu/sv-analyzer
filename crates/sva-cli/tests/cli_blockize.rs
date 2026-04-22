@@ -229,6 +229,29 @@ fn cli_blockize_supports_project_path_and_external_include_paths() {
     fixture.cleanup();
 }
 
+#[test]
+fn cli_blockize_keeps_block_ids_stable_across_processes() {
+    let fixture = write_fixture(
+        "module demo(\n  input logic a,\n  input logic b,\n  input logic c,\n  input logic d,\n  output logic y,\n  output logic z\n);\n  logic tmp_y;\n  logic tmp_z;\n\n  assign tmp_y = a & b;\n  assign y = tmp_y;\n\n  assign tmp_z = c | d;\n  assign z = tmp_z;\nendmodule\n",
+    );
+
+    let baseline = block_ids_by_identity(&fixture);
+    assert!(
+        baseline.len() >= 8,
+        "expected port and assign blocks in blockize output: {baseline:?}"
+    );
+
+    for _ in 0..24 {
+        let current = block_ids_by_identity(&fixture);
+        assert_eq!(
+            current, baseline,
+            "expected stable block IDs across repeated sva_cli blockize runs"
+        );
+    }
+
+    let _ = fs::remove_file(fixture);
+}
+
 fn write_fixture(contents: &str) -> PathBuf {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -303,4 +326,36 @@ fn write_project_fixture() -> ProjectFixture {
         primary_include,
         secondary_include,
     }
+}
+
+fn block_ids_by_identity(path: &Path) -> std::collections::BTreeMap<String, u64> {
+    let output = Command::new(main_bin())
+        .args(["blockize", "--sv", path.to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    json["blocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|block| {
+            let identity = format!(
+                "{}|{}|{}|{}|{}",
+                block["module_scope"].as_str().unwrap(),
+                block["block_type"].as_str().unwrap(),
+                block["line_start"].as_u64().unwrap(),
+                block["line_end"].as_u64().unwrap(),
+                block["code_snippet"].as_str().unwrap()
+            );
+            (identity, block["id"].as_u64().unwrap())
+        })
+        .collect()
 }

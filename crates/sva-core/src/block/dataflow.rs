@@ -135,6 +135,15 @@ fn module_templates_from_block_set(block_set: &BlockSet) -> HashMap<String, Modu
         entry.blocks.push(block.clone());
     }
 
+    for template in templates.values_mut() {
+        template.blocks.sort_by_key(|block| block.id().0);
+        template.port_order = template
+            .blocks
+            .iter()
+            .filter_map(port_name_from_block)
+            .collect();
+    }
+
     templates
 }
 
@@ -1086,6 +1095,7 @@ fn merge_assign_blocks(blocks: Vec<Block>) -> Result<Vec<Block>> {
         .into_values()
         .map(merge_assign_group)
         .collect::<Result<Vec<_>>>()?;
+    merged_assigns.sort_by_key(|block| block.id().0);
 
     other_blocks.append(&mut merged_assigns);
     Ok(other_blocks)

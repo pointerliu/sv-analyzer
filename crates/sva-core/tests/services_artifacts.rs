@@ -5,9 +5,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::json;
 use sva_core::ast::ParseOptions;
 use sva_core::services::{
-    blocks_query, create_blockize_json, create_slice_json_static, query_slice_block_drivers,
-    query_slice_signal_drivers, BlocksQueryRequest, CreateBlockizeArtifactRequest,
-    CreateStaticSliceArtifactRequest, SliceArtifactQueryRequest,
+    blockize, blocks_query, create_blockize_json, create_slice_json_static,
+    query_slice_block_drivers, query_slice_signal_drivers, slice_static, BlockizeRequest,
+    BlocksQueryRequest, CreateBlockizeArtifactRequest, CreateStaticSliceArtifactRequest,
+    SliceArtifactQueryRequest, StaticSliceRequest,
 };
 use sva_core::types::{BlockId, BlockJson, SignalNode, StableSliceEdgeJson, StableSliceGraphJson};
 
@@ -69,6 +70,44 @@ fn create_static_slice_json_writes_artifact_under_sva() {
         serde_json::from_slice(&fs::read(&artifact_path).unwrap()).unwrap();
     assert_eq!(saved.target, "TOP.top.y");
     assert_eq!(response.mode, "static");
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn static_slice_preserves_block_id_from_blockize_for_matching_assign_block() {
+    let dir = unique_temp_dir("sva_static_slice_block_id");
+    let source = dir.join("design.sv");
+    fs::write(
+        &source,
+        "module top(input logic a, input logic b, output logic y);\n  logic tmp;\n  assign tmp = a & b;\n  assign y = tmp;\nendmodule\n",
+    )
+    .unwrap();
+
+    let block_set = blockize(BlockizeRequest {
+        sv_files: vec![source.clone()],
+        parse_options: ParseOptions::default(),
+    })
+    .unwrap();
+    let static_graph = slice_static(StaticSliceRequest {
+        sv_files: vec![source],
+        parse_options: ParseOptions::default(),
+        signal: "TOP.top.y".to_string(),
+    })
+    .unwrap();
+
+    let blockize_assign = block_set
+        .blocks()
+        .iter()
+        .find(|block| block.line_start() == 3 && block.line_end() == 4)
+        .unwrap();
+    let static_assign = static_graph
+        .blocks
+        .iter()
+        .find(|block| block.line_start == 3 && block.line_end == 4)
+        .unwrap();
+
+    assert_eq!(blockize_assign.id().0, static_assign.id.0);
 
     let _ = fs::remove_dir_all(dir);
 }
