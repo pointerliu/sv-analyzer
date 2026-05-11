@@ -1,6 +1,6 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Mutex;
 
 use anyhow::{anyhow, Context, Result};
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -13,7 +13,7 @@ use crate::wave::{SignalValue, WaveformReader};
 
 #[derive(Debug)]
 pub struct WellenReader {
-    waveform: RefCell<Waveform>,
+    waveform: Mutex<Waveform>,
     signal_lookup: HashMap<String, Option<SignalRef>>,
     time_table: Vec<u64>,
     scope_remap: HashMap<String, String>,
@@ -33,7 +33,7 @@ impl WellenReader {
         let scope_remap = build_scope_remap(waveform.hierarchy());
 
         Ok(Self {
-            waveform: RefCell::new(waveform),
+            waveform: Mutex::new(waveform),
             signal_lookup,
             time_table,
             scope_remap,
@@ -47,7 +47,7 @@ impl WellenReader {
     pub fn search_signal_names(&self, query: &str, limit: usize) -> Vec<String> {
         let normalized_query = normalize_search_text(query);
         let matcher = SkimMatcherV2::default();
-        let waveform = self.waveform.borrow();
+        let waveform = self.waveform.lock().unwrap();
         let hierarchy = waveform.hierarchy();
         let mut scored = hierarchy
             .iter_vars()
@@ -143,7 +143,7 @@ impl WaveformReader for WellenReader {
             None => return Ok(None),
         };
 
-        let mut waveform = self.waveform.borrow_mut();
+        let mut waveform = self.waveform.lock().unwrap();
         waveform.load_signals(&[signal_ref]);
         let waveform_signal = waveform
             .get_signal(signal_ref)
