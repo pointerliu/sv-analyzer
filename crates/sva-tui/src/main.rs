@@ -19,7 +19,6 @@ use sva_tui::graph::GraphIndex;
 use sva_tui::ui::{self, WaveDisplay};
 
 const DEFAULT_JSON: &str = "ibex_blues_slice.json";
-const DEFAULT_ROOT_BLOCK_ID: u64 = 1480;
 const DEFAULT_ROOT_TIME: i64 = 19;
 
 #[derive(Debug, Parser)]
@@ -28,8 +27,8 @@ const DEFAULT_ROOT_TIME: i64 = 19;
 struct Cli {
     #[arg(default_value = DEFAULT_JSON)]
     json_path: PathBuf,
-    #[arg(long, default_value_t = DEFAULT_ROOT_BLOCK_ID)]
-    root_block_id: u64,
+    #[arg(long)]
+    root_block_id: Option<u64>,
     #[arg(long, default_value_t = DEFAULT_ROOT_TIME)]
     root_time: i64,
     #[arg(long)]
@@ -42,7 +41,11 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let graph = load_graph(&cli.json_path)?;
     let index = GraphIndex::new(graph);
-    let root_id = index.find_root_node(cli.root_block_id, cli.root_time)?;
+    let root_id = if let Some(block_id) = cli.root_block_id {
+        index.find_root_node(block_id, cli.root_time)?
+    } else {
+        index.auto_detect_root_node(cli.root_time)?
+    };
     let root_signal = Some(index.target().to_string());
     let mut state = ExplorerState::new(index, root_id, root_signal);
     let waveform = cli

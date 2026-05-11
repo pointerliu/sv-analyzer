@@ -100,6 +100,51 @@ impl GraphIndex {
         bail!("root block {root_block_id} at time {root_time} was not found")
     }
 
+    pub fn auto_detect_root_node(&self, root_time: i64) -> Result<usize> {
+        let target_leaf = self
+            .graph
+            .target
+            .rsplit('.')
+            .next()
+            .unwrap_or(&self.graph.target);
+
+        let target_block_ids: HashSet<BlockId> = self
+            .graph
+            .edges
+            .iter()
+            .filter_map(|edge| {
+                let signal_name = edge.signal.as_ref()?.name.as_str();
+                if signal_name == self.graph.target || signal_name.ends_with(target_leaf) {
+                    let node = self.nodes_by_id.get(&edge.from)?;
+                    if let StableSliceNodeJson::Block { block_id, .. } = node {
+                        return Some(*block_id);
+                    }
+                }
+                None
+            })
+            .collect();
+
+        for node in &self.graph.nodes {
+            if let StableSliceNodeJson::Block { id, block_id, time } = node {
+                if time.map(|t| t.0) == Some(root_time)
+                    && target_block_ids.contains(block_id)
+                {
+                    return Ok(*id);
+                }
+            }
+        }
+
+        for node in &self.graph.nodes {
+            if let StableSliceNodeJson::Block { id, time, .. } = node {
+                if time.map(|t| t.0) == Some(root_time) {
+                    return Ok(*id);
+                }
+            }
+        }
+
+        bail!("no root node found at time {root_time}")
+    }
+
     pub fn children(&self, node_id: usize) -> Vec<ChildEntry> {
         let mut edges = self.edges_by_to.get(&node_id).cloned().unwrap_or_default();
         edges.sort_by_key(|edge| self.incoming_sort_key(edge));
