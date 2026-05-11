@@ -17,12 +17,10 @@ pub struct StaticSlicer {
 
 impl StaticSlicer {
     pub fn new(block_set: BlockSet) -> Self {
-        let blocks_by_id = block_set
-            .blocks()
-            .iter()
-            .cloned()
-            .map(|block| (block.id(), block))
-            .collect();
+        let mut blocks_by_id: HashMap<BlockId, Block> = HashMap::new();
+        for block in block_set.blocks().iter().cloned() {
+            blocks_by_id.entry(block.id()).or_insert(block);
+        }
 
         Self {
             block_set,
