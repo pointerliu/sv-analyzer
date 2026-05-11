@@ -136,9 +136,10 @@ fn block_set_rejects_duplicate_block_ids() {
         .build()
         .unwrap();
 
-    let result = BlockSet::try_from(vec![left_driver, right_driver]);
-
-    assert!(result.is_err());
+    // Duplicate block IDs are allowed (same source code in different instances
+    // share the same source-based block ID).
+    let result = BlockSet::new(vec![left_driver, right_driver]);
+    assert!(result.is_ok(), "duplicate block IDs should be allowed");
 }
 
 #[test]
