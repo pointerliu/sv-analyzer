@@ -99,7 +99,6 @@ pub fn elaborate_block_set(
     top_modules.sort();
 
     let mut blocks = Vec::new();
-    let mut next_block_id = 0u64;
     for module_name in top_modules {
         let instance_path = format!("TOP.{module_name}");
         elaborate_module_instance(
@@ -109,7 +108,6 @@ pub fn elaborate_block_set(
             None,
             &templates,
             &instances_by_module,
-            &mut next_block_id,
             &mut blocks,
         )?;
     }
@@ -349,7 +347,6 @@ fn elaborate_module_instance(
     instance: Option<&ModuleInstance>,
     templates: &HashMap<String, ModuleTemplate>,
     instances_by_module: &HashMap<String, Vec<ModuleInstance>>,
-    next_block_id: &mut u64,
     blocks: &mut Vec<Block>,
 ) -> Result<()> {
     let Some(template) = templates.get(module_name) else {
@@ -364,7 +361,7 @@ fn elaborate_module_instance(
             continue;
         }
 
-        blocks.push(qualify_block(block, instance_path, next_block_id)?);
+        blocks.push(qualify_block(block, instance_path)?);
     }
 
     match (parent_path, instance) {
@@ -378,7 +375,7 @@ fn elaborate_module_instance(
                 }
 
                 if let Some(bridge) =
-                    bridge_port_block(block, parent_scope, instance_path, instance, next_block_id)?
+                    bridge_port_block(block, parent_scope, instance_path, instance)?
                 {
                     blocks.push(bridge);
                 }
@@ -393,7 +390,7 @@ fn elaborate_module_instance(
                     continue;
                 }
 
-                blocks.push(qualify_block(block, instance_path, next_block_id)?);
+                blocks.push(qualify_block(block, instance_path)?);
             }
         }
     }
@@ -408,7 +405,6 @@ fn elaborate_module_instance(
                 Some(child_instance),
                 templates,
                 instances_by_module,
-                next_block_id,
                 blocks,
             )?;
         }
@@ -417,7 +413,7 @@ fn elaborate_module_instance(
     Ok(())
 }
 
-fn qualify_block(block: &Block, scope: &str, next_block_id: &mut u64) -> Result<Block> {
+fn qualify_block(block: &Block, scope: &str) -> Result<Block> {
     let dataflow = block
         .dataflow()
         .iter()
@@ -436,7 +432,7 @@ fn qualify_block(block: &Block, scope: &str, next_block_id: &mut u64) -> Result<
         .collect();
 
     Block::builder()
-        .id(take_block_id(next_block_id))
+        .id(source_block_id(block))
         .block_type(block.block_type())
         .circuit_type(block.circuit_type())
         .module_scope(scope)
@@ -455,7 +451,6 @@ fn bridge_port_block(
     parent_scope: &str,
     child_scope: &str,
     instance: &ModuleInstance,
-    next_block_id: &mut u64,
 ) -> Result<Option<Block>> {
     let Some(port_name) = port_name_from_block(template_port_block) else {
         return Ok(None);
@@ -498,7 +493,7 @@ fn bridge_port_block(
 
     Ok(Some(
         Block::builder()
-            .id(take_block_id(next_block_id))
+            .id(source_block_id(template_port_block))
             .block_type(template_port_block.block_type())
             .circuit_type(CircuitType::Combinational)
             .module_scope(child_scope)
@@ -541,10 +536,18 @@ fn qualify_signal(signal: &SignalNode, scope: &str) -> SignalNode {
     SignalNode::variable(format!("{scope}.{}", signal.name), signal.locate)
 }
 
-fn take_block_id(next_block_id: &mut u64) -> BlockId {
-    let block_id = BlockId(*next_block_id);
-    *next_block_id += 1;
-    block_id
+/// Content-based block id: same source location → same id across instances.
+fn source_block_id(block: &Block) -> BlockId {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let basename = std::path::Path::new(block.source_file())
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(block.source_file());
+    basename.hash(&mut hasher);
+    (block.line_start() as u64).hash(&mut hasher);
+    (block.line_end() as u64).hash(&mut hasher);
+    BlockId(hasher.finish())
 }
 
 #[derive(Default)]

@@ -4,7 +4,7 @@ pub use dataflow::{elaborate_block_set, DataflowBlockizer};
 
 use std::collections::{HashMap, HashSet};
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use derive_builder::Builder;
 use serde::ser::{SerializeStruct, Serializer};
 use serde::{Deserialize, Serialize};
@@ -47,9 +47,7 @@ impl BlockSet {
         let mut signal_to_drivers: HashMap<SignalNode, Vec<BlockId>> = HashMap::new();
 
         for block in &blocks {
-            if !seen_block_ids.insert(block.id) {
-                bail!("duplicate block id in block set");
-            }
+            seen_block_ids.insert(block.id);
 
             for signal in &block.output_signals {
                 if !signal.is_variable() {
