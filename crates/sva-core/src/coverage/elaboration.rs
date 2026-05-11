@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::coverage::CoverageTracker;
@@ -40,7 +41,9 @@ impl VerilatorElaborationIndex {
         let path = path.as_ref();
         let file = File::open(path)
             .with_context(|| format!("failed to open Verilator tree JSON {}", path.display()))?;
-        let root: Value = serde_json::from_reader(file)
+        let mut deserializer = serde_json::Deserializer::from_reader(file);
+        deserializer.disable_recursion_limit();
+        let root: Value = Value::deserialize(&mut deserializer)
             .with_context(|| format!("failed to parse Verilator tree JSON {}", path.display()))?;
         let file_map = load_file_map(path, meta_path.as_ref().map(|path| path.as_ref()))?;
 
@@ -277,7 +280,9 @@ fn load_file_map(
             meta_path.display()
         )
     })?;
-    let root: Value = serde_json::from_reader(file).with_context(|| {
+    let mut deserializer = serde_json::Deserializer::from_reader(file);
+    deserializer.disable_recursion_limit();
+    let root: Value = Value::deserialize(&mut deserializer).with_context(|| {
         format!(
             "failed to parse Verilator tree metadata JSON {}",
             meta_path.display()
