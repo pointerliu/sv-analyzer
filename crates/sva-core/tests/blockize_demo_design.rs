@@ -24,7 +24,7 @@ fn creates_paper_style_blocks_and_merges_chained_assigns() {
         .parse_files(std::slice::from_ref(&fixture))
         .unwrap();
     let blockizer = DataflowBlockizer;
-    let block_set = blockizer.blockize(&parsed).unwrap();
+    let block_set = blockizer.blockize(&parsed, None).unwrap();
 
     let shapes = block_set
         .blocks()
@@ -111,7 +111,7 @@ fn creates_port_blocks_for_non_ansi_modules_too() {
         .parse_files(std::slice::from_ref(&fixture))
         .unwrap();
     let blockizer = DataflowBlockizer;
-    let block_set = blockizer.blockize(&parsed).unwrap();
+    let block_set = blockizer.blockize(&parsed, None).unwrap();
 
     let shapes = block_set
         .blocks()
@@ -148,7 +148,7 @@ fn captures_demo_design_line_ranges_code_snippets_and_top_level_outputs() {
     let parsed = SvParserProvider
         .parse_files(std::slice::from_ref(&fixture))
         .unwrap();
-    let block_set = DataflowBlockizer.blockize(&parsed).unwrap();
+    let block_set = DataflowBlockizer.blockize(&parsed, None).unwrap();
 
     let clk_input = block_set
         .blocks()
@@ -464,8 +464,8 @@ fn blockize_assigns_stable_ids_for_identical_inputs() {
         .unwrap();
     let parsed_twice = SvParserProvider.parse_files(&[design, testbench]).unwrap();
 
-    let first = DataflowBlockizer.blockize(&parsed_once).unwrap();
-    let second = DataflowBlockizer.blockize(&parsed_twice).unwrap();
+    let first = DataflowBlockizer.blockize(&parsed_once, None).unwrap();
+    let second = DataflowBlockizer.blockize(&parsed_twice, None).unwrap();
 
     let first_by_snippet = first
         .blocks()
@@ -529,7 +529,7 @@ fn maps_preprocessed_blocks_back_to_source_lines_and_snippets() {
     let parsed = SvParserProvider
         .parse_files(std::slice::from_ref(&design))
         .unwrap();
-    let block_set = DataflowBlockizer.blockize(&parsed).unwrap();
+    let block_set = DataflowBlockizer.blockize(&parsed, None).unwrap();
 
     let clk_input = block_set
         .blocks()

@@ -280,6 +280,8 @@ fn run_blockize(args: BlockizeArgs) -> Result<()> {
     let block_set = blockize(BlockizeRequest {
         sv_files: args.sv_files,
         parse_options: parse_options(args.project_path, args.include_paths),
+        tree_json: None,
+        tree_meta_json: None,
     })?;
     println!("{}", serde_json::to_string_pretty(&block_set)?);
     Ok(())

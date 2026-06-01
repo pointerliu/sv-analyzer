@@ -58,6 +58,8 @@ fn handle_blockize(params: Option<Value>) -> JsonRpcResponse {
             .map(std::path::PathBuf::from)
             .collect(),
         parse_options: parse_options(params.project_path, params.include_paths),
+        tree_json: None,
+        tree_meta_json: None,
     };
     match blockize(req) {
         Ok(result) => JsonRpcResponse {

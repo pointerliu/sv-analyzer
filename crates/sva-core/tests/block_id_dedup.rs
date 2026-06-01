@@ -27,7 +27,7 @@ fn same_source_code_same_block_id_across_instances() -> Result<()> {
 
     let sv_files = vec![tmp.join("sub.v"), tmp.join("top.v")];
     let parsed = SvParserProvider.parse_files(&sv_files)?;
-    let template = DataflowBlockizer.blockize(&parsed)?;
+    let template = DataflowBlockizer.blockize(&parsed, None)?;
     let block_set = elaborate_block_set(&parsed, &template)?;
 
     // Find blocks for the "assign y = a + b" line (line 2 in sub.v)

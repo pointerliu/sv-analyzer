@@ -128,7 +128,7 @@ pub fn assignment_statement_coverage_report(
     wave: &WellenReader,
     time: Timestamp,
 ) -> Result<StatementCoverageReport> {
-    let block_set = DataflowBlockizer.blockize(parsed_files)?;
+    let block_set = DataflowBlockizer.blockize(parsed_files, None)?;
     let blocks_by_location = block_set
         .blocks()
         .iter()
@@ -550,7 +550,7 @@ fn collect_assignment_statements(
     for file in parsed_files {
         let normalized_file = normalize_file_key(&file.path.display().to_string());
         let line_snippets = file.source_text.lines().collect::<Vec<_>>();
-        let parsed = DataflowBlockizer.blockize(std::slice::from_ref(file))?;
+        let parsed = DataflowBlockizer.blockize(std::slice::from_ref(file), None)?;
 
         for block in parsed.blocks() {
             if !matches!(block.block_type(), BlockType::Assign | BlockType::Always) {

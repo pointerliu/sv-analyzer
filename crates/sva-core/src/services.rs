@@ -23,6 +23,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub struct BlockizeRequest {
     pub sv_files: Vec<PathBuf>,
     pub parse_options: ParseOptions,
+    pub tree_json: Option<PathBuf>,
+    pub tree_meta_json: Option<PathBuf>,
 }
 
 pub struct CreateBlockizeArtifactRequest {
@@ -167,10 +169,26 @@ struct BlockQueryView {
     output_signals: Vec<String>,
 }
 
+fn load_elaboration(
+    tree_json: Option<&PathBuf>,
+    tree_meta_json: Option<&PathBuf>,
+) -> Result<Option<VerilatorElaborationIndex>> {
+    match tree_json {
+        Some(path) => Ok(Some(VerilatorElaborationIndex::from_tree_json_file_with_meta(
+            path,
+            tree_meta_json.map(|p| p.as_path()),
+        )?)),
+        None => Ok(None),
+    }
+}
+
 pub fn blockize(req: BlockizeRequest) -> Result<BlockSet> {
     let parsed_files = parse_sv_files(&req.sv_files, &req.parse_options)?;
-    let block_set =
-        elaborate_block_set(&parsed_files, &DataflowBlockizer.blockize(&parsed_files)?)?;
+    let elaboration = load_elaboration(req.tree_json.as_ref(), req.tree_meta_json.as_ref())?;
+    let block_set = elaborate_block_set(
+        &parsed_files,
+        &DataflowBlockizer.blockize(&parsed_files, elaboration.as_ref())?,
+    )?;
     Ok(block_set)
 }
 
@@ -180,14 +198,18 @@ pub fn create_blockize_json(
     let block_set = blockize(BlockizeRequest {
         sv_files: req.sv_files,
         parse_options: req.parse_options,
+        tree_json: None,
+        tree_meta_json: None,
     })?;
     write_blockize_artifact(block_set, req.artifact_dir)
 }
 
 pub fn slice_static(req: StaticSliceRequest) -> Result<crate::types::StableSliceGraphJson> {
     let parsed_files = parse_sv_files(&req.sv_files, &req.parse_options)?;
-    let block_set =
-        elaborate_block_set(&parsed_files, &DataflowBlockizer.blockize(&parsed_files)?)?;
+    let block_set = elaborate_block_set(
+        &parsed_files,
+        &DataflowBlockizer.blockize(&parsed_files, None)?,
+    )?;
     let request = SliceRequest {
         signal: SignalNode::named(req.signal),
         time: Timestamp(0),
@@ -201,8 +223,12 @@ pub fn slice_static(req: StaticSliceRequest) -> Result<crate::types::StableSlice
 
 pub fn slice_dynamic(req: DynamicSliceRequest) -> Result<crate::types::StableSliceGraphJson> {
     let parsed_files = parse_sv_files(&req.sv_files, &req.parse_options)?;
-    let block_set =
-        elaborate_block_set(&parsed_files, &DataflowBlockizer.blockize(&parsed_files)?)?;
+    // Load elaboration once — shared between blockize and coverage tracker
+    let elaboration = load_elaboration(req.tree_json.as_ref(), req.tree_meta_json.as_ref())?;
+    let block_set = elaborate_block_set(
+        &parsed_files,
+        &DataflowBlockizer.blockize(&parsed_files, elaboration.as_ref())?,
+    )?;
 
     let base_coverage: Arc<dyn CoverageTracker + Send + Sync> = match (&req.clock, req.clk_step) {
         (Some(clock_name), Some(clk_step)) => Arc::new(VcdCoverageTracker::open_with_clock(
@@ -212,16 +238,12 @@ pub fn slice_dynamic(req: DynamicSliceRequest) -> Result<crate::types::StableSli
         _ => anyhow::bail!("both --clock and --clk-step must be provided together"),
     };
     let coverage: Arc<dyn CoverageTracker + Send + Sync> =
-        if let Some(tree_json) = req.tree_json.as_ref() {
-            Arc::new(ElaboratedCoverageTracker::new(
+        match elaboration {
+            Some(ref elab) => Arc::new(ElaboratedCoverageTracker::new(
                 base_coverage,
-                VerilatorElaborationIndex::from_tree_json_file_with_meta(
-                    tree_json,
-                    req.tree_meta_json.as_ref(),
-                )?,
-            ))
-        } else {
-            base_coverage
+                elab.clone(),
+            )),
+            None => base_coverage,
         };
 
     if !coverage.is_posedge_time(req.time) {

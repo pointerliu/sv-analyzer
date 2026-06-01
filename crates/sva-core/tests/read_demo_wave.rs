@@ -349,7 +349,7 @@ fn demo_trace_block(predicate: impl Fn(&sva_core::block::Block) -> bool) -> sva_
     let parsed = SvParserProvider.parse_files(&[demo_design_path()]).unwrap();
 
     DataflowBlockizer
-        .blockize(&parsed)
+        .blockize(&parsed, None)
         .unwrap()
         .blocks()
         .iter()

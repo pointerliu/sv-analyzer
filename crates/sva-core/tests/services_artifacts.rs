@@ -87,6 +87,8 @@ fn static_slice_preserves_block_id_from_blockize_for_matching_assign_block() {
     let block_set = blockize(BlockizeRequest {
         sv_files: vec![source.clone()],
         parse_options: ParseOptions::default(),
+        tree_json: None,
+        tree_meta_json: None,
     })
     .unwrap();
     let static_graph = slice_static(StaticSliceRequest {

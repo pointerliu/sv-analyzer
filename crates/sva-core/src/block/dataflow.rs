@@ -5,6 +5,7 @@ use sv_parser::{unwrap_locate, unwrap_node, RefNode};
 
 use super::{Block, BlockSet, BlockType, Blockizer, CircuitType, DataflowEntry};
 use crate::ast::{get_original_lineno_from_ast_locate, ParsedFile};
+use crate::coverage::elaboration::VerilatorElaborationIndex;
 use crate::types::{BlockId, LineRange, SignalNode};
 
 struct BlockContext {
@@ -43,8 +44,16 @@ struct PortBlockData {
 pub struct DataflowBlockizer;
 
 impl Blockizer for DataflowBlockizer {
-    fn blockize(&self, files: &[ParsedFile]) -> Result<BlockSet> {
-        let mut collector = BlockCollector::default();
+    fn blockize(
+        &self,
+        files: &[ParsedFile],
+        elaboration: Option<&VerilatorElaborationIndex>,
+    ) -> Result<BlockSet> {
+        let mut collector = BlockCollector {
+            next_block_id: 0,
+            blocks: Vec::new(),
+            elaboration: elaboration.cloned(),
+        };
 
         for file in files {
             collector.collect_file(file)?;
@@ -550,10 +559,10 @@ fn source_block_id(block: &Block) -> BlockId {
     BlockId(hasher.finish())
 }
 
-#[derive(Default)]
 struct BlockCollector {
     next_block_id: u64,
     blocks: Vec<Block>,
+    elaboration: Option<VerilatorElaborationIndex>,
 }
 
 impl BlockCollector {
@@ -604,6 +613,17 @@ impl BlockCollector {
                                 ast_line: line_end.ast_line,
                             })
                             .unwrap_or(line_start);
+                            // Skip unelaborated assigns (inactive generate branches)
+                            if let Some(ref elab) = self.elaboration {
+                                let file_key = file.path.display().to_string();
+                                if !elab.is_assign_like_elaborated(
+                                    &file_key,
+                                    line_start.source_line,
+                                    line_end.source_line,
+                                ) {
+                                    continue;
+                                }
+                            }
                             let code_snippet = snippet_from_source(
                                 &file.source_text,
                                 line_start.source_line,
@@ -659,6 +679,17 @@ impl BlockCollector {
                                 ast_line: line_end.ast_line,
                             })
                             .unwrap_or(line_start);
+                            // Skip unelaborated always blocks (inactive generate branches)
+                            if let Some(ref elab) = self.elaboration {
+                                let file_key = file.path.display().to_string();
+                                if !elab.is_always_elaborated(
+                                    &file_key,
+                                    line_start.source_line,
+                                    line_end.source_line,
+                                ) {
+                                    continue;
+                                }
+                            }
                             let code_snippet = snippet_from_source(
                                 &file.source_text,
                                 line_start.source_line,

@@ -20,7 +20,7 @@ fn extracts_statement_level_dataflow_from_assignments_and_conditions() {
         .unwrap();
 
     let blockizer = DataflowBlockizer;
-    let blocks = blockizer.blockize(&parsed).unwrap();
+    let blocks = blockizer.blockize(&parsed, None).unwrap();
 
     let actual = collect_entries(&blocks);
     let expected = BTreeSet::from([
@@ -77,7 +77,7 @@ fn keeps_multi_target_assignments_as_one_dataflow_entry_with_list_output() {
     let parsed = SvParserProvider
         .parse_files(std::slice::from_ref(&fixture))
         .unwrap();
-    let blocks = DataflowBlockizer.blockize(&parsed).unwrap();
+    let blocks = DataflowBlockizer.blockize(&parsed, None).unwrap();
 
     let multi_output_entries = blocks
         .blocks()

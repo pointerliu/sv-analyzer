@@ -326,5 +326,9 @@ impl Serialize for Block {
 }
 
 pub trait Blockizer {
-    fn blockize(&self, files: &[crate::ast::ParsedFile]) -> Result<BlockSet>;
+    fn blockize(
+        &self,
+        files: &[crate::ast::ParsedFile],
+        elaboration: Option<&crate::coverage::elaboration::VerilatorElaborationIndex>,
+    ) -> Result<BlockSet>;
 }
